@@ -10,13 +10,13 @@ function WSGCache(F::SGFilter, nfull::Integer)
     ck = Vector{Vector{ComplexF64}}(undef, 2n + 1)
     for p in 0:2n
         k = zeros(nfull); k[1:2m+1] = fw .* d .^ p
-        ck[p+1] = conj.(rfft(k))
+        ck[p+1] = conj.(rfft_cached(k))
     end
     return WSGCache(F, nfull, ck)
 end
 
 function _corr(Y::Vector{ComplexF64}, ck::Vector{ComplexF64}, nfull::Int, N::Int)
-    v = irfft(Y .* ck, nfull)
+    v = irfft_cached(Y .* ck, nfull)
     return v[1:N]
 end
 
@@ -26,20 +26,32 @@ function weighted_smooth(c::WSGCache, x::AbstractVector, wt::AbstractVector)
     N = nf - 2m
     sw = nf / sum(wt)
     w = wt .* sw
-    W = rfft(w); WX = rfft(w .* x)
-    Mom = [_corr(W, c.ckern[p+1], nf, N) for p in 0:2n]
-    Yv = [_corr(WX, c.ckern[p+1], nf, N) for p in 0:n]
+    W = rfft_cached(w); WX = rfft_cached(w .* x)
+    # Sliding weighted moments sum_d w_(i+d) d^p (p = 0..2n) and sum_d w_(i+d) x_(i+d) d^p (p = 0..n),
+    # as FFT correlations with the kernels d^p; columns of Mom and Yv. Buffers are reused.
+    Mom = Matrix{Float64}(undef, N, 2n + 1); Yv = Matrix{Float64}(undef, N, n + 1)
+    Ybuf = similar(W); vbuf = Vector{Float64}(undef, nf)
+    for p in 0:2n
+        Ybuf .= W .* c.ckern[p+1]
+        irfft_cached!(vbuf, Ybuf, nf)
+        copyto!(view(Mom, :, p + 1), view(vbuf, 1:N))
+    end
+    for p in 0:n
+        Ybuf .= WX .* c.ckern[p+1]
+        irfft_cached!(vbuf, Ybuf, nf)
+        copyto!(view(Yv, :, p + 1), view(vbuf, 1:N))
+    end
     P = n + 1
     out = zeros(N)
     A = zeros(P, P); y = zeros(P)
     @inbounds for i in 1:N
         for a in 1:P, b in 1:P
-            A[a, b] = Mom[a+b-1][i]
+            A[a, b] = Mom[i, a+b-1]
         end
         for a in 1:P
-            y[a] = Yv[a][i]
+            y[a] = Yv[i, a]
         end
-        ldiv!(cholesky!(Symmetric(A)), y)
+        spd_solve!(A, y)
         out[i] = y[1]
     end
     return out

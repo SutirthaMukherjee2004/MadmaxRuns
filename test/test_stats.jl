@@ -68,3 +68,30 @@
     Eex, se = Eq_exact(M2m.gamma, 4, 20.0; M = 60_000, rng = Xoshiro(2))
     @test isapprox(MadmaxRuns.Eq_second(M2m.eq[4], 20.0), Eex; atol = max(5se, 2e-3))
 end
+
+@testset "P_K over the full T range, fast kernels" begin
+    G = transfer_function(SGFilter(4, 64), 24872)
+    for tau in (1e-7, 3e-4, 0.05, 0.5)
+        M = MadmaxRuns.PKModel(24872, 24744, MadmaxRuns.removed_modes(retained_modes(G, tau)))
+        ts = collect(1.0:0.5:400.0)
+        p = [pk_pvalue(M, t) for t in ts]
+        @test all(v -> 0 < v <= 1, p)                                   # defined everywhere, no error
+        @test all(p[i+1] <= p[i] * (1 + 1e-12) for i in 1:length(p)-1)  # monotone in T
+        @test isapprox(pk_pvalue(M, M.tail_t - 0.5), -expm1(MadmaxRuns.pk_logcdf(M, M.tail_t - 0.5, nothing, nothing, true)); rtol = 1e-12)
+        @test isapprox(pk_pvalue(M, M.tail_t), MadmaxRuns.PK_TAIL_SWITCH; rtol = 1e-6)  # switch at p = 1e-4
+        r1 = pk_pvalue(M, 60.0) / pbc_pvalue(60.0, 24744); r2 = pk_pvalue(M, 90.0) / pbc_pvalue(90.0, 24744)
+        @test isapprox(r1, r2; rtol = 1e-9)                              # frozen correction factor beyond t*
+        @test isfinite(pk_log10pvalue(M, 3000.0)) && pk_log10pvalue(M, 3000.0) < -300
+    end
+    y = randn(Xoshiro(5), 24872); Y = rfft(y)
+    @test isapprox(MadmaxRuns.rfft_cached(y), Y; rtol = 1e-13)
+    @test isapprox(MadmaxRuns.irfft_cached(Y, 24872), irfft(Y, 24872); rtol = 1e-13)
+    Yc = copy(Y); @test MadmaxRuns.irfft_cached(Yc, 24872) == MadmaxRuns.irfft_cached(Y, 24872) && Yc == Y  # input preserved
+    B = randn(Xoshiro(6), 7, 5); A = B' * B + I; b = randn(Xoshiro(7), 5)
+    @test isapprox(MadmaxRuns.spd_solve!(copy(A), copy(b)), A \ b; rtol = 1e-12)
+    @test_throws PosDefException MadmaxRuns.spd_solve!([1.0 2.0; 2.0 1.0], [1.0, 1.0])
+    for i in 1:200
+        z = randn(Xoshiro(100 + i), 3000)
+        @test squares_T_run(z)[1] == squares_T(z)                       # same T as RunStatistics.t_obs
+    end
+end

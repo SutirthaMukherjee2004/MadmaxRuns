@@ -32,6 +32,6 @@ end
 
 function whiten(r::AbstractVector, G::AbstractVector, keep::AbstractVector{Bool}, sigmahat::AbstractVector)
     N = length(r)
-    C = whitened_fourier(rfft(r), G, keep)
-    return irfft(C, N) ./ sigmahat
+    C = whitened_fourier(rfft_cached(r), G, keep)
+    return irfft_cached(C, N) ./ sigmahat
 end

@@ -30,7 +30,7 @@ function window_fit(x::AbstractVector, W::Integer, wt::AbstractVector)
             Y0 += w * y; Y1 += w * t * y; Y2 += w * t2 * y
         end
         A = [S0 S1 S2; S1 S2 S3; S2 S3 S4]
-        c0, c1, c2 = A \ [Y0, Y1, Y2]
+        c0, c1, c2 = spd_solve!(A, [Y0, Y1, Y2])
         r2 = 0.0; fb = 0.0
         for k in 1:W
             t = (k - h) / W; fk = c0 + c1 * t + c2 * t * t

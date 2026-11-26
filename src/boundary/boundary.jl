@@ -7,7 +7,7 @@ function spike_fourier(F::SGFilter, nfull::Integer)
     D = zeros(ComplexF64, length(J), div(N, 2) + 1)
     Threads.@threads for a in eachindex(J)
         x = zeros(nfull); x[J[a]] = 1.0
-        D[a, :] = rfft(linear_residual(F, x))
+        D[a, :] = rfft_cached(linear_residual(F, x))
     end
     return D
 end
@@ -18,7 +18,7 @@ function boundary_responses(Dspk::AbstractMatrix, G::AbstractVector, keep::Abstr
     H = zeros(length(rows), nJ)
     Threads.@threads for a in 1:nJ
         C = whitened_fourier(view(Dspk, a, :), G, keep)
-        h = irfft(C, N)
+        h = irfft_cached(C, N)
         H[:, a] = view(h, rows)
     end
     return H
@@ -32,7 +32,7 @@ end
 
 function boundary_patterns(H::AbstractMatrix, sigmaJ::AbstractVector, sigmatest::AbstractVector, kappa::Real; K::Integer = 6)
     nJ = size(H, 2); a = sigmaJ ./ sqrt(kappa)
-    Gm = zeros(nJ, nJ); blk = 2048
+    Gm = zeros(nJ, nJ); blk = 512
     buf = zeros(min(blk, size(H, 1)), nJ)
     for r0 in 1:blk:size(H, 1)
         r = r0:min(r0 + blk - 1, size(H, 1)); B = view(buf, 1:length(r), :)

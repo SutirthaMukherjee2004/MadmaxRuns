@@ -20,12 +20,12 @@ function null_iid(S::FilterSetup, n::Integer; seed::Integer = 11, first_replica:
     Threads.@threads for i in 1:n
         replica = first_replica + i - 1
         y = randn(stream_rng(seed, replica), S.N)
-        Y = rfft(y)
+        Y = rfft_cached(y)
         @inbounds for f in eachindex(Y)
             S.keep[f] || (Y[f] = 0)
         end
-        v = irfft(Y, S.N)
-        T[i] = squares_T(view(v, S.rows) ./ sqrt(S.kappa))
+        v = irfft_cached(Y, S.N)
+        T[i] = first(squares_T_run(view(v, S.rows) ./ sqrt(S.kappa)))
         isfinite(T[i]) || error("non-finite SQUARES statistic in i.i.d. null replica $replica")
     end
     return NullSet(:iid, sort!(T))

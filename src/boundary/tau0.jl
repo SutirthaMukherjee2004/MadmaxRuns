@@ -19,7 +19,7 @@ function boundary_variance(Dspk::AbstractMatrix, G::AbstractVector, keep::Abstra
     acc = [zeros(length(rows)) for _ in 1:nt]
     Threads.@threads for c in 1:nt
         for a in c:nt:nJ
-            h = irfft(whitened_fourier(view(Dspk, a, :), G, keep), N)
+            h = irfft_cached(whitened_fourier(view(Dspk, a, :), G, keep), N)
             acc[c] .+= view(h, rows) .^ 2 .* sigmaJ[a]^2
         end
     end

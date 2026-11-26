@@ -11,6 +11,7 @@ include("model/background.jl")
 include("model/noise.jl")
 include("model/lineshapes.jl")
 
+include("whitening/fftplans.jl")
 include("filter/savitzky_golay.jl")
 include("filter/weighted_sg.jl")
 
@@ -68,7 +69,7 @@ export retained_modes, removed_modes, retained_fraction, whiten, whiten!, whiten
 export BoundaryBasis, boundary_responses, boundary_patterns, remove_boundary, boundary_end_bins,
        tau0_exact, tau0_closed, boundary_significance
 export squares_T, squares_T_run, pbc_cdf, pbc_pvalue, pbc_cdf_recursion, gamma_lags, correlation_matrix,
-       Eq_first, Eq_second, Eq_exact, pk_cdf, pk_pvalue, PKTable, pk_table, pvalue, pk_threshold,
+       Eq_first, Eq_second, Eq_exact, pk_cdf, pk_pvalue, pk_log10pvalue, PKTable, pk_table, pvalue, pk_threshold,
        Psi, Psibar, Phi, Phiinv, Phi2
 export PipelineConfig, FilterSetup, filter_setup, ChainResult, run_chain, analyse_spectrum,
        simulate_spectrum, inject_line!

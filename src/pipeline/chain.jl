@@ -51,9 +51,9 @@ end
 function chain_whitening(S, x, sigma)
     r = linear_residual(S.F, x)
     rho = r ./ sigma
-    R = rfft(r)
+    R = rfft_cached(r)
     C = whitened_fourier(R, S.G, S.keep)
-    c = irfft(C, S.N) ./ sigma
+    c = irfft_cached(C, S.N) ./ sigma
     z = c[S.rows] ./ sqrt(S.kappa)
     all(v -> all(isfinite, v), (r, rho, R, C, c, z)) || error("whitening produced non-finite values")
     return (; r, rho, R, C, c, z)
@@ -70,12 +70,21 @@ function chain_projection(S, sigma, z)
     return (; zp, boundary = B)
 end
 
-function chain_statistics(S, residual, sigma, zp)
-    _, i0, i1 = squares_T_run(zp)
-    T = squares_T(zp)
+# T is the largest chi^2 of any success run, Eq. (2). It is found by one linear scan
+# (squares_T_run), which gives the same value as RunStatistics.t_obs bit for bit. For the analysed
+# spectrum itself (verify = true) both are computed and must agree, and the RunStatistics value is
+# reported; Monte Carlo replicas use the scan alone.
+function chain_statistics(S, residual, sigma, zp; verify::Bool = false)
+    T, i0, i1 = squares_T_run(zp)
     zr = residual[S.rows] ./ (sigma[S.rows] .* sqrt(S.q))
     all(isfinite, zr) || error("normalized raw residual contains non-finite values")
-    Tr = squares_T(zr)
+    Tr = first(squares_T_run(zr))
+    if verify
+        Tref = squares_T(zp); Trref = squares_T(zr)
+        isapprox(T, Tref; rtol = 1e-12) && isapprox(Tr, Trref; rtol = 1e-12) ||
+            error("SQUARES T from the run scan ($T, $Tr) disagrees with RunStatistics.t_obs ($Tref, $Trref)")
+        T, Tr = Tref, Trref
+    end
     all(v -> isfinite(v) && v >= 0, (T, Tr)) || error("SQUARES statistic is invalid")
     return (; T, run = (i0, i1), Tr)
 end
@@ -107,7 +116,7 @@ function _run_chain(S::FilterSetup, x::AbstractVector, checkpoint;
         chain_projection(S, sigma, w.z)
     end
     obs = run_stage(checkpoint, :statistics) do
-        chain_statistics(S, w.r, sigma, b.zp)
+        chain_statistics(S, w.r, sigma, b.zp; verify = compute_pvalues)
     end
     values = if compute_pvalues
         run_stage(checkpoint, :pvalues) do
