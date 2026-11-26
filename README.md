@@ -156,7 +156,7 @@ julia --project=plots plots/scripts/run_paper_notebook.jl     # figures -> resul
 
 The [paper figure gallery](plots/paper-reference/) contains Figures 1–21 and Table 1 as PNGs
 extracted from the paper PDF.
-For new results, [paperplot.ipynb](paperplot.ipynb) has one cell per figure, reads `results/data/`,
+For new results, [paperplot.ipynb](notebooks/paperplot.ipynb) has one cell per figure, reads `results/data/`,
 and writes generated plots to `results/paperplots/`.
 
 The [earlier SQUARES workflow notebook](notebooks/Madmax_Runs-3.ipynb) is available separately.
@@ -189,13 +189,13 @@ MadmaxRuns/
 ├── Project.toml                      analysis package: name, dependencies, compatible versions
 ├── Manifest.toml                     exact pinned dependency versions (Julia 1.12)
 ├── README.md                         this file
-├── paperplot.ipynb                   notebook with one cell per paper figure (kernel "MadmaxRuns (Julia)")
 ├── .gitignore                        excludes results, smoke runs and checkpoints from git
 ├── .gitattributes                    excludes notebooks and reference figures from GitHub language statistics
 ├── docs/
 │   └── figure-13-analysis-pipeline.png   pipeline diagram (paper Fig. 13) used by the plotting notebook
 ├── notebooks/
 │   ├── Madmax_Runs-3.ipynb            earlier SQUARES workflow notebook
+│   ├── paperplot.ipynb               notebook with one cell per paper figure (kernel "MadmaxRuns (Julia)")
 │   ├── Project.toml                  environment of the Jupyter kernel (IJulia + plots)
 │   └── Manifest.toml                 its pinned versions
 ├── scripts/

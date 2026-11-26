@@ -1,7 +1,7 @@
 using MadmaxRuns, JSON, Base64
 
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const PAPER_NOTEBOOK = joinpath(ROOT, "paperplot.ipynb")
+const PAPER_NOTEBOOK = joinpath(ROOT, "notebooks", "paperplot.ipynb")
 
 function run_paper_notebook(path::AbstractString = PAPER_NOTEBOOK; template::AbstractString = PAPER_NOTEBOOK)
     notebook = JSON.parsefile(template)
