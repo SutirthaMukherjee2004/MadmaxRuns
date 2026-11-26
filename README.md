@@ -22,7 +22,7 @@ model are needed.
 9. [Paper studies and figures](#9-paper-studies-and-figures)
 10. [Batch jobs](#10-batch-jobs)
 11. [Troubleshooting](#11-troubleshooting)
-12. [Code layout](#12-code-layout)
+12. [File tree](#12-file-tree)
 
 ---
 
@@ -540,7 +540,7 @@ everything that finished).
 
 ---
 
-## 12. Code layout
+## 12. File tree
 
 ```text
 MadmaxRuns/
@@ -551,6 +551,7 @@ MadmaxRuns/
 ├── paperplot.ipynb                   notebook with one cell per paper figure (kernel "MadmaxRuns (Julia)")
 ├── Madmax_Runs-3.ipynb               earlier SQUARES workflow notebook, kept for reference
 ├── .gitignore                        excludes results, smoke runs and checkpoints from git
+├── .gitattributes                    marks notebooks as documentation (GitHub reports the repository as Julia)
 ├── docs/
 │   └── figure-13-analysis-pipeline.png   pipeline diagram (paper Fig. 13) shown in this README
 ├── notebooks/

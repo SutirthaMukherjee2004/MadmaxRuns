@@ -1,0 +1,4 @@
+# Notebooks carry embedded figures and are documentation of the results, not source code:
+# exclude them from GitHub's language statistics so the repository is reported as Julia.
+*.ipynb linguist-documentation
+docs/** linguist-documentation
