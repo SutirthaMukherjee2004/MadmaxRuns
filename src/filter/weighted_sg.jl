@@ -39,7 +39,8 @@ function weighted_smooth(c::WSGCache, x::AbstractVector, wt::AbstractVector)
         for a in 1:P
             y[a] = Yv[a][i]
         end
-        out[i] = (cholesky!(Symmetric(A)) \ y)[1]
+        ldiv!(cholesky!(Symmetric(A)), y)
+        out[i] = y[1]
     end
     return out
 end

@@ -37,10 +37,10 @@ function boundary_patterns(H::AbstractMatrix, sigmaJ::AbstractVector, sigmatest:
     for r0 in 1:blk:size(H, 1)
         r = r0:min(r0 + blk - 1, size(H, 1)); B = view(buf, 1:length(r), :)
         B .= view(H, r, :) ./ view(sigmatest, r)
-        mul!(Gm, B', B, 1.0, 1.0)
+        BLAS.syrk!('U', 'T', 1.0, B, 1.0, Gm)
     end
     Gm .*= a .* a'
-    E = eigen(Symmetric(Gm))
+    E = eigen(Symmetric(Gm, :U))
     ord = sortperm(E.values; rev = true)
     lambda = max.(E.values[ord], 0.0); U = E.vectors[:, ord]
     s = sqrt.(lambda)

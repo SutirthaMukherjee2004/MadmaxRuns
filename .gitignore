@@ -10,6 +10,7 @@ smoke/
 *.jls.gz
 .study/
 .ipynb_checkpoints/
+/paper.pdf
 
 .vscode/
 .idea/

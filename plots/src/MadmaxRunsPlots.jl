@@ -8,8 +8,10 @@ include("style.jl")
 include("figures_model.jl")
 include("figures_tests.jl")
 include("figures_chain.jl")
+include("paper.jl")
 
 export make_all, paper_theme, PAPER_PLOT_STUDIES
+export PaperRender, render_paper!, make_paper
 
 const PAPER_PLOT_STUDIES = ("filter", "background", "spectra", "sigmafit", "iteration", "nobkg",
                             "tauscan", "tau0", "correlation", "fptp", "pvalues", "examples",

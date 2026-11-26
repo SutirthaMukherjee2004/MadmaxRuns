@@ -65,13 +65,18 @@ function spectrum_state(S::FilterSetup, x::AbstractVector; noise = nothing)
     return SpectrumState(nf, r, rfft(r))
 end
 
-function tau_step(S::FilterSetup, sigma::AbstractVector, R::AbstractVector; removal::Bool = true)
+function tau_whitened(S::FilterSetup, sigma::AbstractVector, R::AbstractVector)
     length(sigma) == S.N || throw(DimensionMismatch("expected $(S.N) noise bins"))
     all(s -> isfinite(s) && s > 0, sigma) || error("whitening requires finite positive noise scales")
     C = whitened_fourier(R, S.G, S.keep)
-    c = irfft(C, S.N) ./ sigma
-    z = c[S.rows] ./ sqrt(S.kappa)
+    c = irfft(C, S.N)
+    z = c[S.rows] ./ sigma[S.rows] ./ sqrt(S.kappa)
     all(isfinite, z) || error("whitened residual contains non-finite values")
+    return z
+end
+
+function tau_step(S::FilterSetup, sigma::AbstractVector, R::AbstractVector; removal::Bool = true)
+    z = tau_whitened(S, sigma, R)
     T = squares_T(z)
     isfinite(T) || error("non-finite SQUARES statistic")
     Tp = NaN; zp = z

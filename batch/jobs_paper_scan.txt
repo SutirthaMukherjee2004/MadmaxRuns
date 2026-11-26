@@ -1,0 +1,3 @@
+correlation nspec=5000 nnull=5000
+fptp nspec=5000 nnull=5000 nfilt=5000
+pvalues nspec=5000 nnull=5000 nfilt=5000

@@ -1,0 +1,13 @@
+examples nspec=5000 tau=1e-7
+filter
+background
+spectra
+sigmafit
+iteration nspec=100
+nobkg nspec=5000 nnull=5000
+tauscan nspec=5000 nnull=5000
+tau0
+leakage
+tolerance
+boundary nspec=5000
+tcut nmc=500000 Mexact=20000

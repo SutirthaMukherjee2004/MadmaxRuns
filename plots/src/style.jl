@@ -59,8 +59,9 @@ level_label(lv) = lv < 0.01 ? @sprintf("%.2f %%", 100lv) : @sprintf("%g %%", rou
 tau_label(tau) = (e = floor(Int, log10(tau)); m = tau / 10.0^e; isapprox(m, 1; atol = 0.05) ? L"\tau=10^{%$e}" :
                 L"\tau=%$(round(m, digits = 1))\times10^{%$e}")
 
-function phist!(ax, h::AbstractVector; kw...)
-    nb = length(h); e = range(0, 1, length = nb + 1); d = h ./ (sum(h) / nb)
+function phist!(ax, h::AbstractVector; counts::Bool = false, kw...)
+    nb = length(h); e = range(0, 1, length = nb + 1)
+    d = counts ? h : h ./ (sum(h) / nb)
     stairs!(ax, collect(e), [d; d[end]]; step = :post, kw...)
 end
 

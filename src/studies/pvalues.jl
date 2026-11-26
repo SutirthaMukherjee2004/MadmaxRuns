@@ -1,13 +1,15 @@
-function study_pvalues(o::StudyOptions; progress = nothing)
+function study_pvalues(o::StudyOptions; progress = nothing, projected::Bool = false, analytical::Bool = false)
     tmin, t0h, t0x = thresholds(o)
     cfg = base_config(o; boundary_removal = true)
-    F = SGFilter(o.n, o.m; kind = o.kind); Dspk = spike_fourier(F, cfg.grid.nbins)
+    removal = projected || analytical
+    Dspk = removal ? spike_fourier(SGFilter(o.n, o.m; kind = o.kind), cfg.grid.nbins) : nothing
     S0 = filter_setup(with_tau(cfg, 0.01); with_pk = false, with_boundary = false)
+    raw_table = pbc_table(S0.Ng)
     sig = axion_signal(); bmed = median_background()
     out = Dict{Tuple{String,Float64},Any}()
     for model in o.models
         taus = isempty(o.taus) ? [tmin, model == Homoscedastic ? t0h : t0x, 0.01, 0.03, 0.05, 0.1, 0.2] : tau_grid(o)
-        setups = [filter_setup(with_tau(cfg, tau); Dspk) for tau in taus]
+        setups = [filter_setup(with_tau(cfg, tau); with_pk = analytical, with_boundary = removal, Dspk) for tau in taus]
         for (level_index, lv) in enumerate(o.levels)
             cid = case_id(model, lv)
             bg = fit_set(S0, "noise", data_generator(o, cfg, cid; model, level = lv), o.nspec)
@@ -23,7 +25,7 @@ function study_pvalues(o::StudyOptions; progress = nothing)
                     sigma = Float64.(set.sigma[i])
                     T[i] = squares_T(linear_residual(S0.F, set.gen(i))[S0.rows] ./ (sigma[S0.rows] .* sqrt(S0.q)))
                 end
-                map(t -> tabulated_pvalue(x -> pbc_pvalue(x, S0.Ng), setups[1].pbctab, t), T)
+                map(t -> tabulated_pvalue(x -> pbc_pvalue(x, S0.Ng), raw_table, t), T)
             end
             _, bref, sigmaref, sref = simulate_spectrum(spectrum_rng(o, cid, 1), cfg; model, level = lv, bmed, signal = sig)
             pertau = Dict{Float64,Any}()
@@ -33,20 +35,27 @@ function study_pvalues(o::StudyOptions; progress = nothing)
                 log_message("pvalues $(model_tag(model)) level=$lv tau=$tau")
                 stat = run_stage(progress, Symbol(stage, "_statistics")) do
                     iid = null_iid(S, o.nnull; seed = o.seed + 11)
-                    Tf, Tfp = eval_set(S, fl)
-                    nf = NullSet(:filt, sort(Tf)); nfp = NullSet(:filt, sort(Tfp))
-                    data = [(name, eval_set(S, set)) for (name, set) in (("noise", bg), ("signal", sg), ("b0", b0))]
+                    Tf, Tfp = eval_set(S, fl; removal)
+                    nf = NullSet(:filt, sort(Tf))
+                    nfp = removal ? NullSet(:filt, sort(Tfp)) : nothing
+                    data = [(name, eval_set(S, set; removal)) for (name, set) in (("noise", bg), ("signal", sg), ("b0", b0))]
                     (; tau, model, level = lv, iid, nf, nfp, data)
                 end
                 result = run_stage(progress, Symbol(stage, "_histogram")) do
                     h = Dict{String,Any}()
                     for (name, (T, Tp)) in stat.data
-                        pf = mc_pvalue.(T, Ref(stat.nf)); pfr = mc_pvalue.(Tp, Ref(stat.nfp))
+                        pf = mc_pvalue.(T, Ref(stat.nf))
                         pii = mc_pvalue.(T, Ref(stat.iid))
-                        pir = map(t -> tabulated_pvalue(x -> pk_pvalue(S.pk, x), S.pktab, t), Tp)
-                        h[name] = (; filt = p_histogram(pf), filt_rm = p_histogram(pfr), iid = p_histogram(pii), pk_rm = p_histogram(pir),
-                                   f05 = (filt = fraction_below(pf, 0.05), filt_rm = fraction_below(pfr, 0.05),
-                                          iid = fraction_below(pii, 0.05), pk_rm = fraction_below(pir, 0.05)))
+                        probabilities = (; filt = pf, iid = pii)
+                        if removal
+                            probabilities = merge(probabilities, (; filt_rm = mc_pvalue.(Tp, Ref(stat.nfp))))
+                        end
+                        if analytical
+                            pk_rm = map(t -> tabulated_pvalue(x -> pk_pvalue(S.pk, x), S.pktab, t), Tp)
+                            probabilities = merge(probabilities, (; pk_rm))
+                        end
+                        h[name] = merge(map(p_histogram, probabilities),
+                                        (; f05 = map(p -> fraction_below(p, 0.05), probabilities)))
                     end
                     lw = whitened_line(S, sref, sigmaref[o.m+1:end-o.m])
                     c = argmax(abs.(lw))

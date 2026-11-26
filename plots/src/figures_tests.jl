@@ -1,29 +1,51 @@
 function fig_nobkg_data(r)
     fig = Figure(size = (340, 300))
-    a = Axis(fig[1, 1], xlabel = "bin", ylabel = L"x_i")
+    draw_nobkg_data!(fig, r, 1)
+    return fig
+end
+
+function draw_nobkg_data!(fig, r, col; paper::Bool = false)
+    xlabel = paper ? "frequency bin" : "bin"
+    ylabel = paper ? "normalised power" : L"x_i"
+    a = Axis(fig[1, col]; xlabel, ylabel)
     lines!(a, 1:r.L, r.example; color = MIDGREY, linewidth = 0.4)
     i0, i1 = r.run
     w = max(1, i0 - 60):min(r.L, i1 + 60)
     vspan!(a, [i0], [i1]; color = (RED, 0.25))
-    b = Axis(fig[2, 1], xlabel = "bin", ylabel = L"x_i", title = L"T_{\mathrm{obs}}=%$(round(r.T_example, digits = 2)),\ p=%$(round(r.p_example, digits = 3))")
+    title = paper ? "" : L"T_{\mathrm{obs}}=%$(round(r.T_example, digits = 2)),\ p=%$(round(r.p_example, digits = 3))"
+    b = Axis(fig[2, col]; xlabel, ylabel, title)
     scatterlines!(b, collect(w), r.example[w]; color = MIDGREY, markersize = 3, linewidth = 0.6)
     scatterlines!(b, collect(i0:i1), r.example[i0:i1]; color = RED, markersize = 4, linewidth = 0.9)
     hlines!(b, [0]; color = :black, linewidth = 0.6)
     panel!(a, "a"); panel!(b, "b")
-    return fig
+    return nothing
 end
 
 function fig_nobkg_pvalues(r)
     fig = Figure(size = (340, 300))
-    a = Axis(fig[1, 1], xlabel = L"p", ylabel = "density")
-    phist!(a, p_hist(r.p_noise); color = :black)
-    hlines!(a, [1]; color = MIDGREY, linestyle = :dash, linewidth = 0.8)
-    b = Axis(fig[2, 1], xlabel = L"p", ylabel = "density", yscale = log10)
-    phist!(b, p_hist(r.shapes["Gaussian"].p) .+ 1e-9; color = BLUE, label = L"A=20,\ w=4")
-    phist!(b, p_hist(r.p_noise) .+ 1e-9; color = :black, label = "noise only")
-    ylims!(b, 1e-2, 40)
+    draw_nobkg_pvalues!(fig, r, 1)
+    return fig
+end
+
+function draw_nobkg_pvalues!(fig, r, col; counts::Bool = false)
+    ylabel = counts ? "counts" : "density"
+    a = Axis(fig[1, col]; xlabel = L"p", ylabel)
+    h_noise = p_hist(r.p_noise)
+    phist!(a, h_noise; counts, color = :black)
+    hlines!(a, [counts ? mean(h_noise) : 1]; color = MIDGREY, linestyle = :dash, linewidth = 0.8)
+    b = Axis(fig[2, col]; xlabel = L"p", ylabel, yscale = log10)
+    phist!(b, p_hist(r.shapes["Gaussian"].p) .+ 1e-9; counts, color = BLUE, label = L"A=20,\ w=4")
+    phist!(b, h_noise .+ 1e-9; counts, color = :black, label = "noise only")
+    counts ? ylims!(b, 1, max(10, length(r.p_noise))) : ylims!(b, 1e-2, 40)
     axislegend(b; position = :rt)
     panel!(a, "a"); panel!(b, "b")
+    return nothing
+end
+
+function fig_nobkg(r)
+    fig = Figure(size = (680, 300))
+    draw_nobkg_data!(fig, r, 1; paper = true)
+    draw_nobkg_pvalues!(fig, r, 2; counts = true)
     return fig
 end
 p_hist(p; nb = 20) = [count(x -> (k - 1) / nb <= x < k / nb || (k == nb && x == 1), p) for k in 1:nb]
@@ -154,33 +176,59 @@ end
 
 function fig_pvalues(r, null::Symbol, tag::AbstractString)
     fig = Figure(size = (300, 470))
+    draw_pvalues!(fig.layout, r, null, tag)
+    return fig
+end
+
+function draw_pvalues!(layout, r, null::Symbol, tag::AbstractString; counts::Bool = false)
     for (i, lv) in enumerate(r.levels)
         haskey(r.cases, (tag, lv)) || continue
         d = r.cases[(tag, lv)]
         pertau = hasproperty(d, :pertau) ? d.pertau : getproperty(d, Symbol("per\u03c4"))
         for (j, name) in enumerate(("noise", "signal"))
-            ax = Axis(fig[i, j], yscale = log10, xlabel = i == length(r.levels) ? L"p" : "",
-                      ylabel = j == 1 ? level_label(lv) : "", title = i == 1 ? (j == 1 ? "no signal" : "axion line") : "")
+            ax = Axis(layout[i, j], yscale = log10, xlabel = i == length(r.levels) ? L"p" : "",
+                      ylabel = j == 1 ? (counts ? "counts\n" * level_label(lv) : level_label(lv)) : "",
+                      title = i == 1 ? (j == 1 ? "no signal" : counts ? "axion line, peak 3\u03c3" : "axion line") : "")
             ntau = length(d.taus)
             for (k, tau) in enumerate(d.taus)
                 h = getfield(pertau[tau].hist[name], null)
                 col = k == 1 ? RED : k == 2 ? GREEN : palette(:plasma, ntau - 2)[k-2]
-                phist!(ax, h .+ 1e-9; color = col, linewidth = k <= 2 ? 1.3 : 0.7)
+                phist!(ax, h .+ 1e-9; counts, color = col, linewidth = k <= 2 ? 1.3 : 0.7)
                 if null == :iid
-                    phist!(ax, getfield(pertau[tau].hist["b0"], null) .+ 1e-9; color = col, linestyle = :dash, linewidth = 0.6)
+                    phist!(ax, getfield(pertau[tau].hist["b0"], null) .+ 1e-9; counts, color = col, linestyle = :dash, linewidth = 0.6)
                 end
             end
-            phist!(ax, (name == "noise" ? d.raw_noise : d.raw_signal) .+ 1e-9; color = :black, linewidth = 1.0)
-            hlines!(ax, [1]; color = MIDGREY, linestyle = :dash, linewidth = 0.7)
-            ylims!(ax, 1e-2, 25)
-            if j == 2
-                ia = inset_axis(fig[i, j]; width = Relative(0.42), height = Relative(0.38))
+            phist!(ax, (name == "noise" ? d.raw_noise : d.raw_signal) .+ 1e-9; counts, color = :black, linewidth = 1.0)
+            if counts
+                ylims!(ax, 1, max(10, r.nspec))
+                i < length(r.levels) && hidexdecorations!(ax; ticks = false, minorticks = false)
+            else
+                hlines!(ax, [1]; color = MIDGREY, linestyle = :dash, linewidth = 0.7)
+                ylims!(ax, 1e-2, 25)
+            end
+            if j == 2 && (!counts || i == 1)
+                ia = inset_axis(layout[i, j]; width = Relative(0.42), height = Relative(0.38))
                 l = pertau[d.taus[end]].line
                 lines!(ia, collect(eachindex(l)) .- div(length(l), 2), l; color = BLUE)
             end
-            panel!(ax, string('a' + 2(i - 1) + j - 1))
+            counts || panel!(ax, string('a' + 2(i - 1) + j - 1))
         end
     end
-    rowgap!(fig.layout, 3); colgap!(fig.layout, 4)
+    rowgap!(layout, 3); colgap!(layout, 4)
+    return nothing
+end
+
+function fig_pvalues_paper(r)
+    fig = Figure(size = (620, 960))
+    for (i, null) in enumerate((:filt, :iid))
+        title = null == :filt ? L"\mathrm{(A)\ null\ hypothesis}\ \mathcal{H}_0^{\mathrm{filt}}" :
+                L"\mathrm{(B)\ null\ hypothesis}\ \mathcal{H}_0^{\mathrm{iid}}"
+        Label(fig[2i-1, 1:2], title)
+        for (j, tag) in enumerate(("homo", "hetero"))
+            tag in r.models || throw(ArgumentError("Figure H.21 requires both noise models"))
+            layout = fig[2i, j] = GridLayout()
+            draw_pvalues!(layout, r, null, tag; counts = true)
+        end
+    end
     return fig
 end

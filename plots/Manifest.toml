@@ -2,7 +2,7 @@
 
 julia_version = "1.12.4"
 manifest_format = "2.0"
-project_hash = "30a91ff67b1959607ad980dc689aaf5f1c36822d"
+project_hash = "7a8629f664f96b5c59c59b8609ba45aa0c18c7f9"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -910,7 +910,7 @@ uuid = "4f6d2a8e-3c51-4b7e-9a0d-6e2b1c8f5a73"
 version = "1.0.0"
 
 [[deps.MadmaxRunsPlots]]
-deps = ["CairoMakie", "MadmaxRuns", "Printf", "Statistics"]
+deps = ["CairoMakie", "JSON", "MadmaxRuns", "Printf", "Statistics"]
 path = "."
 uuid = "a3e1c7d2-5b84-4f19-8e6a-2d9c0b7f4e15"
 version = "0.1.0"

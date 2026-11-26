@@ -48,23 +48,7 @@ One spectrum gives one observed SQUARES statistic and one corrected p-value at a
 
 ## Analysis flow
 
-```mermaid
-flowchart TD
-    A["1. Measured CSV or simulated power spectrum"] --> B["2. SG background and residual r"]
-    B --> C["3. Fit the noise profile"]
-    C -->|"Update weights until convergence"| B
-    C -->|"Validated fit"| D["4–5. Normalize for diagnostics and transform r"]
-    D --> E["6–7. Select modes at tau and divide by G on those modes"]
-    E --> F["8. Inverse FFT, scale by fitted noise and retained fraction"]
-    F --> G["8. Project out the leading boundary patterns"]
-    G --> H["9. Compute SQUARES T on the tested bins"]
-    H --> I["10. Evaluate the analytical P_K p-value"]
-    H --> J["Optional: compare T with simulated null statistics"]
-    J --> K["Ensemble studies: calibration, detection rates and tau scans"]
-    C -.-> L["Live log and validated stage checkpoints"]
-    I -.-> L
-    K -.-> M["Study data and paper figures"]
-```
+![Figure 13 of the paper: analysis pipeline, noise-estimation loop, boundary removal and null tests](docs/figure-13-analysis-pipeline.png)
 
 The FFT uses the unweighted residual and transfer function. The fitted noise is applied after the inverse FFT. The filtered null uses the measured spectrum's fitted noise profile and follows the same filtering, Fourier mask, and boundary treatment. The i.i.d. null removes the same modes from unit Gaussian noise.
 
@@ -94,15 +78,14 @@ Load a final result with `MadmaxRuns.load_result(path)`. Its `result` field incl
 
 ## Paper figures and studies
 
-Open [paperplot.ipynb](paperplot.ipynb) to render existing study data or set `generate_studies = true` to compute them. The notebook and CLI both call `MadmaxRunsPlots.make_all` and share the repository's figure functions, panel sizes, colors, fonts, and export settings.
+Open [paperplot.ipynb](paperplot.ipynb) after the paper-scale studies finish. It has one Julia setup cell and one code cell for each of the 21 numbered figures, including the Figure 13 diagram. The notebook reads the study results from `results/data/` and saves numbered figures in `results/paperplots/`.
 
 ```bash
-julia --project=. -t 4 scripts/run_study.jl filter resume=true
-julia --project=plots plots/scripts/make_figures.jl
-julia --project=plots plots/scripts/make_figures.jl --require-all
+bash batch/pbs_paper.sh
+julia --project=plots plots/scripts/run_paper_notebook.jl
 ```
 
-The second command previews available results. The third checks that every figure study is present before exporting. For a different data or plot directory, pass them as the first and second positional arguments. Full paper-scale studies are more expensive than a preview and use the same renderer. The original [Madmax_Runs-3.ipynb](Madmax_Runs-3.ipynb) is included for the earlier SQUARES workflow. Select the MadmaxRuns kernel manually when opening it.
+The PBS launcher schedules the full studies and the notebook export. The second command runs the same notebook cells locally against completed data and embeds their outputs. Use `julia --project=plots plots/scripts/make_figures.jl --paper` to export the numbered figures without updating the notebook. Paper export rejects reduced ensembles. The original [Madmax_Runs-3.ipynb](Madmax_Runs-3.ipynb) is included for the earlier SQUARES workflow.
 
 | Studies | Outputs |
 |---|---|
@@ -111,7 +94,7 @@ The second command previews available results. The third checks that every figur
 | `tauscan`, `tau0`, `correlation`, `fptp`, `pvalues`, `tcut` | Threshold scans, null comparisons, p-value calibration and run corrections |
 | `table_a`, `table_b` | Detection fractions and Monte Carlo comparisons |
 
-Use `julia --project=. scripts/run_study.jl list` for the study names. Use `quick=true` for smaller ensembles and `resume=true` to reuse compatible, verified outputs. The histogram study checkpoints each noise model, level, and threshold. It can stop if $P_K$ is invalid at a scan point, preserving the computed statistics. Use `taus=...` in the CLI or `study_overrides` in the notebook for a different scan. A quick run and a full study use different settings.
+Use `julia --project=. scripts/run_study.jl list` for the study names and `resume=true` to reuse compatible, verified outputs. The histogram study checkpoints each noise model, level, and threshold. The two null curves in Figure H.21 use Monte Carlo. The optional `analytical=true` diagnostic can stop when $P_K$ is invalid. Use `taus=...` to run an alternative scan.
 
 For staged runs, use `bash batch/run_local.sh 4` or configure the queue and resources in `batch/config.sh` and submit with `bash batch/pbs_all.sh`. PBS output goes to `results/logs/pbs`. The final stage merges table parts and requests a complete figure export.
 
