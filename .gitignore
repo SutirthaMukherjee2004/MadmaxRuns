@@ -1,0 +1,14 @@
+deps/deps.jl
+deps/build.log
+docs/build/
+*.cov
+*.mem
+
+results/
+smoke/
+*.jls
+
+.vscode/
+.idea/
+*~
+.DS_Store

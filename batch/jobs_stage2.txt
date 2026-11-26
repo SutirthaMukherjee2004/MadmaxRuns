@@ -1,0 +1,32 @@
+correlation
+fptp
+pvalues
+examples
+table_a shapes=Gaussian
+table_a shapes=Lorentzian
+table_a shapes=top-hat
+table_a shapes=axion
+table_b shapes=Gaussian widths=2
+table_b shapes=Gaussian widths=4
+table_b shapes=Gaussian widths=6
+table_b shapes=Gaussian widths=8
+table_b shapes=Gaussian widths=10
+table_b shapes=Gaussian widths=12
+table_b shapes=Lorentzian widths=2
+table_b shapes=Lorentzian widths=4
+table_b shapes=Lorentzian widths=6
+table_b shapes=Lorentzian widths=8
+table_b shapes=Lorentzian widths=10
+table_b shapes=Lorentzian widths=12
+table_b shapes=top-hat widths=2
+table_b shapes=top-hat widths=4
+table_b shapes=top-hat widths=6
+table_b shapes=top-hat widths=8
+table_b shapes=top-hat widths=10
+table_b shapes=top-hat widths=12
+table_b shapes=axion widths=2
+table_b shapes=axion widths=4
+table_b shapes=axion widths=6
+table_b shapes=axion widths=8
+table_b shapes=axion widths=10
+table_b shapes=axion widths=12

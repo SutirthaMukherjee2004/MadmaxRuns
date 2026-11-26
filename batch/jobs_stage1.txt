@@ -1,0 +1,12 @@
+tauscan
+tau0
+filter
+background
+spectra
+sigmafit
+iteration
+nobkg
+leakage
+tolerance
+boundary
+tcut
