@@ -3,6 +3,7 @@
 Julia implementation of *A General Signal-Agnostic Test for Narrow Signals on Unknown Backgrounds*
 (S. Mukherjee, A. Caldwell): SG background removal, noise fit, Fourier whitening, boundary-term
 removal and the SQUARES statistic with the corrected distribution P_K. See the paper for the method.
+The mock studies use a model of [MADMAX (MAgnetized Disc and Mirror Axion eXperiment)](https://madmax.mpp.mpg.de/news.html).
 
 ## Installation
 
@@ -70,26 +71,19 @@ distribution and the p histogram; per-spectrum results go to `results/data/null_
 
 **Calibration** (`calibrate=true`): `nbkg` spectra with backgrounds from Eq. (27) (or the fitted
 background, `bkg_model=data`) and noise σ̂0 + σ̂1 b from the fit to the input, each processed with the
-same settings, once without and once with an axion line. Reported: f(p ≤ 0.05) with binomial error,
-KS test of the p values, line detection rate, and p_bkg = (1 + #{T_sim ≥ T} + failures)/(nbkg + 1).
-Passes if f(p ≤ 0.05) is within 3σ of 0.05, KS p > 0.01 and at most 1 % of the simulated chains fail
-(noise fit not converged or non-positive). Failed chains count as positives; other errors stop the run.
+same settings, once without and once with an axion line.
 
 **Check** (`check=true`): for the input and every simulated noise-only spectrum, outside ±2m bins
 around the strongest run: variance, skewness, excess kurtosis, lag-1 autocorrelation and rms
 autocorrelation over lags 2–250 of z; slope and curvature of the window variance of r/σ̂ against b̂;
-window-to-window spread of that variance; rms of the sliding mean of r/σ̂ over 2m + 1 bins. A value is
-flagged if it deviates from the simulated distribution with p < 1e-3. In addition |ε_i| ≤ 0.01 is
-required (App. B, Eq. B.2). The largest positive and negative excursions are reported, not used.
+window-to-window spread of that variance; rms of the sliding mean of r/σ̂ over 2m + 1 bins.
 
-**τ scan** (`tauscan=true` or `taus=...`): steps 4–10 at each τ with the same noise fit. With the
+**τ scan** (`tauscan=true` or `taus=...`): With the
 calibration on, the same scan runs on every simulated spectrum and gives the per-τ false-positive and
 detection rates and p_scan, the fraction of noise-only spectra whose smallest p over the scan is at
 most the measured one.
 
-P_K is evaluated with Eq. (G.4) down to p = 1e-4. Below that the factor p_K/p_BC is kept at its value
-at p = 1e-4 and the result is marked as beyond the validated range. Where the second-order E_q is
-undefined for long runs, E_q = 0 if those runs carry less than 1e-4 of the rate; otherwise an error.
+P_K is evaluated with Eq. (G.4).
 
 ## Output
 
@@ -140,11 +134,10 @@ input, options and code; `resume=false` recomputes.
 | real spectrum, `nbkg=5000 check=true` | ≈ 70 min | ≈ 1.5 min |
 | same with `tauscan=true` | – | ≈ 6 min |
 
-Changes: FFTW plans cached per length (`src/whitening/fftplans.jl`) instead of created per call under
+FFTW plans cached per length (`src/whitening/fftplans.jl`) instead of created per call under
 FFTW's planner lock; the small normal equations of the weighted SG filter and the window fit solved
 by an in-place Cholesky in Julia instead of LAPACK; T found by a linear scan of the runs (bit-identical
-to `RunStatistics.t_obs`, which is still evaluated for the analysed spectrum). Results agree with the
-previous code to 1e-13.
+to `RunStatistics.t_obs`, which is still evaluated for the analysed spectrum).
 
 ## Paper studies and figures
 
@@ -161,7 +154,13 @@ julia --project=plots plots/scripts/run_paper_notebook.jl     # figures -> resul
 | `tauscan`, `tau0`, `correlation`, `fptp`, `pvalues`, `tcut` | Figs. 8–11, E.16–E.17, G.19–G.20, H.21 |
 | `table_a`, `table_b` | Table 1 |
 
-`paperplot.ipynb` has one cell per figure and reads `results/data/`.
+The [paper figure gallery](plots/paper-reference/) contains Figures 1–21 and Table 1 as PNGs
+extracted from the paper PDF.
+For new results, [paperplot.ipynb](paperplot.ipynb) has one cell per figure, reads `results/data/`,
+and writes generated plots to `results/paperplots/`.
+
+The [earlier SQUARES workflow notebook](notebooks/Madmax_Runs-3.ipynb) is available separately.
+Its embedded images were cleared to keep the notebook small. Run its cells to regenerate the output.
 
 ## Batch jobs
 
@@ -190,14 +189,13 @@ MadmaxRuns/
 ├── Project.toml                      analysis package: name, dependencies, compatible versions
 ├── Manifest.toml                     exact pinned dependency versions (Julia 1.12)
 ├── README.md                         this file
-├── paper.pdf                         the paper this code implements
 ├── paperplot.ipynb                   notebook with one cell per paper figure (kernel "MadmaxRuns (Julia)")
-├── Madmax_Runs-3.ipynb               earlier SQUARES workflow notebook, kept for reference
 ├── .gitignore                        excludes results, smoke runs and checkpoints from git
-├── .gitattributes                    marks notebooks as documentation (GitHub reports the repository as Julia)
+├── .gitattributes                    excludes notebooks and reference figures from GitHub language statistics
 ├── docs/
-│   └── figure-13-analysis-pipeline.png   pipeline diagram (paper Fig. 13) shown in this README
+│   └── figure-13-analysis-pipeline.png   pipeline diagram (paper Fig. 13) used by the plotting notebook
 ├── notebooks/
+│   ├── Madmax_Runs-3.ipynb            earlier SQUARES workflow notebook
 │   ├── Project.toml                  environment of the Jupyter kernel (IJulia + plots)
 │   └── Manifest.toml                 its pinned versions
 ├── scripts/
@@ -213,7 +211,7 @@ MadmaxRuns/
 │   ├── MadmaxRuns.jl                 module definition: includes all files, exports the public API
 │   ├── model/
 │   │   ├── grid.jl                   frequency grid (25 000 bins of 2 kHz from 4.218 MHz) and bin lookup
-│   │   ├── background.jl             MADMAX-like background, Eq. (27), with random parameters r_k
+│   │   ├── background.jl             simulated background, Eq. (27), with random parameters r_k
 │   │   ├── noise.jl                  noise model sigma_i = sigma0 + sigma1 b_i, homo-/heteroscedastic, Eq. (11)
 │   │   └── lineshapes.jl             Gaussian, Lorentzian, top-hat and axion (SHM) lines, Eqs. (22)-(26), (D.1)
 │   ├── filter/
@@ -262,6 +260,7 @@ MadmaxRuns/
 │       ├── tcut.jl                   Figs. G.19-G.20: T distribution after the mode cut, P_K vs Monte Carlo
 │       └── pvalues.jl                Fig. H.21: p-value distributions under both null hypotheses
 ├── plots/
+│   ├── paper-reference/              figures extracted from the paper as PNGs
 │   ├── Project.toml                  plotting package (CairoMakie) environment
 │   ├── Manifest.toml                 its pinned versions
 │   ├── src/

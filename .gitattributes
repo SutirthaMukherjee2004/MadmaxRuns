@@ -1,3 +1,4 @@
 *.jl linguist-language=Julia linguist-detectable
 *.ipynb linguist-documentation -linguist-detectable
 /docs/** linguist-documentation -linguist-detectable
+/plots/paper-reference/** linguist-documentation -linguist-detectable
