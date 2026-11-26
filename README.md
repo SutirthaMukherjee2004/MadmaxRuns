@@ -154,13 +154,11 @@ julia --project=plots plots/scripts/run_paper_notebook.jl     # figures -> resul
 | `tauscan`, `tau0`, `correlation`, `fptp`, `pvalues`, `tcut` | Figs. 8–11, E.16–E.17, G.19–G.20, H.21 |
 | `table_a`, `table_b` | Table 1 |
 
-The [paper figure gallery](plots/paper-reference/) contains Figures 1–21 and Table 1 as PNGs
-extracted from the paper PDF.
+The [paper figure gallery](plots/paper-reference/) contains Figures 1–21 and Table 1.
 For new results, [paperplot.ipynb](notebooks/paperplot.ipynb) has one cell per figure, reads `results/data/`,
 and writes generated plots to `results/paperplots/`.
 
-The [earlier SQUARES workflow notebook](notebooks/Madmax_Runs-3.ipynb) is available separately.
-Its embedded images were cleared to keep the notebook small. Run its cells to regenerate the output.
+![Analysis workflow from Figure 13](docs/figure-13-analysis-pipeline.png)
 
 ## Batch jobs
 
