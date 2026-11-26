@@ -11,7 +11,7 @@ Base.@kwdef mutable struct StudyOptions
     models::Vector{NoiseModel} = [Homoscedastic, Heteroscedastic]
     tau::Float64 = 1e-7
     W::Int = 96
-    filt_reestimate::Bool = true
+    filt_reestimate::Bool = false
     taus::Vector{Float64} = Float64[]
     tau_min::Float64 = NaN
     tau0_homo::Float64 = NaN
@@ -32,17 +32,21 @@ tau_grid(o::StudyOptions) = isempty(o.taus) ? paper_tau_grid() : sort(o.taus)
 
 spectrum_rng(o::StudyOptions, case::Integer, s::Integer) = stream_rng(o.seed + 1_000_003 * case, s)
 
-function thresholds(o::StudyOptions)
-    tmin = o.tau_min; t0h = o.tau0_homo; t0x = o.tau0_hetero
+function minimum_threshold(o::StudyOptions)
+    tmin = o.tau_min
     if isnan(tmin) && isfile(result_path(o, "tauscan"))
         tmin = load_result(result_path(o, "tauscan")).tau_min
     end
+    return isnan(tmin) ? 5.4e-5 : tmin
+end
+
+function thresholds(o::StudyOptions)
+    tmin = minimum_threshold(o); t0h = o.tau0_homo; t0x = o.tau0_hetero
     if (isnan(t0h) || isnan(t0x)) && isfile(result_path(o, "tau0"))
         r = load_result(result_path(o, "tau0"))
         isnan(t0h) && (t0h = r.tau0[(o.n, o.m, "homo")])
         isnan(t0x) && (t0x = r.tau0[(o.n, o.m, "hetero")])
     end
-    isnan(tmin) && (tmin = 5.4e-5)
     isnan(t0h) && (t0h = 2.9e-4)
     isnan(t0x) && (t0x = 3.9e-4)
     return tmin, t0h, t0x
@@ -56,19 +60,27 @@ end
 function spectrum_state(S::FilterSetup, x::AbstractVector; noise = nothing)
     nf = noise === nothing ? estimate_noise(S.F, S.wsg, x; W = S.cfg.W, estimator = S.cfg.estimator,
                                             tol = S.cfg.tol, maxit = S.cfg.maxit) : noise
+    validate_noise_fit(nf, S.N)
     r = linear_residual(S.F, x)
     return SpectrumState(nf, r, rfft(r))
 end
 
 function tau_step(S::FilterSetup, sigma::AbstractVector, R::AbstractVector; removal::Bool = true)
+    length(sigma) == S.N || throw(DimensionMismatch("expected $(S.N) noise bins"))
+    all(s -> isfinite(s) && s > 0, sigma) || error("whitening requires finite positive noise scales")
     C = whitened_fourier(R, S.G, S.keep)
     c = irfft(C, S.N) ./ sigma
     z = c[S.rows] ./ sqrt(S.kappa)
+    all(isfinite, z) || error("whitened residual contains non-finite values")
     T = squares_T(z)
+    isfinite(T) || error("non-finite SQUARES statistic")
     Tp = NaN; zp = z
     if removal && size(S.H, 1) > 0
         B = boundary_patterns(S.H, pad_edges(sigma, S.cfg.m)[S.J], sigma[S.rows], S.kappa; K = S.cfg.nboundary)
-        zp = remove_boundary(z, B); Tp = squares_T(zp)
+        zp = remove_boundary(z, B)
+        all(isfinite, zp) || error("boundary-projected residual contains non-finite values")
+        Tp = squares_T(zp)
+        isfinite(Tp) || error("non-finite boundary-projected SQUARES statistic")
     end
     return (; z, zp, T, Tp)
 end
@@ -86,6 +98,11 @@ function fit_set(S::FilterSetup, name::AbstractString, gen::Function, n::Integer
     Threads.@threads for i in 1:n
         cfg = S.cfg
         nf = estimate_noise(S.F, S.wsg, gen(i); W = cfg.W, estimator = cfg.estimator, tol = cfg.tol, maxit = cfg.maxit)
+        try
+            validate_noise_fit(nf, S.N)
+        catch err
+            throw(ErrorException("$name spectrum $i: $(sprint(showerror, err))"))
+        end
         sigma[i] = nf.sigma
     end
     return SpectrumSet(String(name), gen, sigma)
@@ -121,10 +138,13 @@ function whitened_line(S::FilterSetup, s::AbstractVector, sigma::AbstractVector)
     return (irfft(C, S.N) ./ sigma)[S.rows] ./ sqrt(S.kappa)
 end
 
-axion_offset(g::SpectrumGrid = PAPER_GRID) = 10.5e6 - g.fref_hz
+axion_offset(::SpectrumGrid = PAPER_GRID) = 10.5e6
 
-const PAPER_AXION_A = 26.0
-axion_signal(A::Real = PAPER_AXION_A; w::Real = 3.4) = (AxionLine(), Float64(A), w, axion_offset())
+function axion_signal(A::Union{Nothing,Real} = nothing; w::Real = 3.4)
+    shape = AxionLine()
+    area = A === nothing ? line_area_for_peak(shape, w, 3.0) : Float64(A)
+    return shape, area, w, axion_offset()
+end
 
 function tau_setups(cfg::PipelineConfig, taus; with_pk = true, with_boundary = true)
     F = SGFilter(cfg.n, cfg.m; kind = cfg.kind)
@@ -137,6 +157,7 @@ fraction_below(p, alpha) = count(<=(alpha), p) / length(p)
 function p_histogram(p::AbstractVector; nb::Integer = 20)
     h = zeros(Int, nb)
     for v in p
+        isfinite(v) && 0 <= v <= 1 || throw(ArgumentError("p-value histogram received an invalid probability"))
         h[clamp(floor(Int, v * nb) + 1, 1, nb)] += 1
     end
     return h

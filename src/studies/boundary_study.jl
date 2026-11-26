@@ -29,7 +29,9 @@ function study_tau0(o::StudyOptions; ns = 2:2:16, ms = collect(16:8:200), alpha:
     xs = Dict(model => simulate_spectrum(spectrum_rng(o, case_id(model, lv), 1), base_config(o); model, level = lv, bmed)[1]
               for model in (Homoscedastic, Heteroscedastic))
     function fitted_sigma(F, model)
-        nf = estimate_noise(F, WSGCache(F, length(xs[model])), xs[model])
+        x = xs[model]
+        nf = estimate_noise(F, WSGCache(F, length(x)), x; W=o.W)
+        validate_noise_fit(nf, length(x) - 2F.m)
         return pad_edges(nf.sigma, F.m)
     end
     tau0 = Dict{Tuple{Int,Int,String},Float64}()
@@ -61,7 +63,7 @@ function study_tau0(o::StudyOptions; ns = 2:2:16, ms = collect(16:8:200), alpha:
         cross[model_tag(model)] = (; significance = sig, closed, z_alpha = zalpha, tau0 = t0, tau0_closed = tc, r2)
         log_message(@sprintf("tau0 %s (n = %d, m = %d): exact %.2e, closed form %.2e", model_tag(model), o.n, o.m, t0, tc))
     end
-    tmin, = thresholds(o)
+    tmin = minimum_threshold(o)
     res = (; ns = collect(ns), ms, map = map0, tau0, taus = tgrid, cross, n = o.n, m = o.m, tau_min = tmin, alpha = alpha)
     save_result(result_path(o, "tau0"), res)
     return res

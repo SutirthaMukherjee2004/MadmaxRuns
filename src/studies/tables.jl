@@ -1,7 +1,7 @@
 function study_table_a(o::StudyOptions)
     L = NOBKG_L; cen = L / 2
     SH = [parse_shape(s) for s in o.shapes]; AS = o.amplitudes; WS = o.widths
-    tab = pbc_table(L; tmax = 150.0)
+    cutoff = decision_threshold(pbc_table(L; tmax = 150.0), 0.05)
     Tn = zeros(o.nnull)
     Threads.@threads for s in 1:o.nnull
         Tn[s] = squares_T(randn(spectrum_rng(o, 2, s), L))
@@ -15,7 +15,7 @@ function study_table_a(o::StudyOptions)
             Threads.@threads for s in 1:o.nspec
                 T[s] = squares_T(randn(spectrum_rng(o, 1, s), L) .+ A .* prof)
             end
-            Ff[i, a, j] = mean(pvalue.(Ref(tab), T) .<= 0.05)
+            Ff[i, a, j] = mean(T .>= cutoff)
             Fm[i, a, j] = mean(mc_pvalue.(T, Ref(null)) .<= 0.05)
         end
         log_message("table (a): $(shape_name(sh)), w = $w: " * join([@sprintf("%.3f", Ff[i, a, j]) for a in eachindex(AS)], " "))
@@ -32,6 +32,7 @@ shape_suffix(o::StudyOptions) = length(o.shapes) == 4 && length(o.widths) == 6 ?
 function study_table_b(o::StudyOptions)
     cfg = base_config(o; tau = o.tau, boundary_removal = true)
     S = filter_setup(cfg)
+    cutoff = decision_threshold(S.pktab, 0.05)
     bmed = median_background(); model = Homoscedastic; lv = o.level
     SH = [parse_shape(s) for s in o.shapes]; AS = o.amplitudes; WS = o.widths
     log_message(@sprintf("table (b): SG n = %d, m = %d, \u03c4 = %.1e, %d rfft modes removed, \u03ba = %.5f",
@@ -48,7 +49,7 @@ function study_table_b(o::StudyOptions)
     Ff = zeros(length(SH), length(AS), length(WS)); Fm = similar(Ff)
     T0 = zeros(o.nspec)
     Threads.@threads for s in 1:o.nspec
-        T0[s] = run_chain(S, base[s]).T
+        T0[s] = run_chain(S, base[s]; compute_pvalues = false).T
     end
     for (i, sh) in enumerate(SH), (j, w) in enumerate(WS)
         prof = line_profile(sh, 1.0, w, S.nfull, cen)
@@ -56,10 +57,10 @@ function study_table_b(o::StudyOptions)
             T = A == 0 ? T0 : zeros(o.nspec)
             if A != 0
                 Threads.@threads for s in 1:o.nspec
-                    T[s] = run_chain(S, base[s] .+ A .* sig[s] .* prof).T
+                    T[s] = run_chain(S, base[s] .+ A .* sig[s] .* prof; compute_pvalues = false).T
                 end
             end
-            Ff[i, a, j] = mean(pvalue.(Ref(S.pktab), T) .<= 0.05)
+            Ff[i, a, j] = mean(T .>= cutoff)
             Fm[i, a, j] = mean(mc_pvalue.(T, Ref(null)) .<= 0.05)
         end
         log_message("table (b): $(shape_name(sh)), w = $w: " * join([@sprintf("%.3f", Ff[i, a, j]) for a in eachindex(AS)], " "))

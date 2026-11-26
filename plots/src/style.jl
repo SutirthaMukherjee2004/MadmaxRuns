@@ -10,8 +10,17 @@ const MIDGREY = Makie.to_color("#8c8c8c")
 const LIGHTGREY = Makie.to_color("#b5b5b5")
 
 function serif_fonts()
-    Makie.FreeTypeAbstraction.findfont("DejaVu Serif") === nothing && return nothing
-    return (; regular = "DejaVu Serif", bold = "DejaVu Serif Bold", italic = "DejaVu Serif Italic")
+    fonts = (; regular = "DejaVu Serif", bold = "DejaVu Serif Bold", italic = "DejaVu Serif Italic")
+    FT = Makie.FreeTypeAbstraction
+    for (style, name) in pairs(fonts)
+        face = FT.findfont(name)
+        face === nothing && return nothing
+        FT.family_name(face) == "dejavu serif" || return nothing
+        if style != :regular
+            occursin(string(style), FT.style_name(face)) || return nothing
+        end
+    end
+    return fonts
 end
 
 function paper_theme()
@@ -55,5 +64,16 @@ function phist!(ax, h::AbstractVector; kw...)
     stairs!(ax, collect(e), [d; d[end]]; step = :post, kw...)
 end
 
-savefig(fig, dir, name) = (mkpath(dir); p = joinpath(dir, name * ".pdf"); save(p, fig; pt_per_unit = 1);
-                           save(joinpath(dir, name * ".png"), fig; px_per_unit = 300 / 72); p)
+function savefig(fig, dir, name)
+    mkpath(dir)
+    pdf = name * ".pdf"
+    png = name * ".png"
+    mktempdir(dir) do staging
+        save(joinpath(staging, pdf), fig; pt_per_unit = 1)
+        save(joinpath(staging, png), fig; px_per_unit = 300 / 72)
+        for file in (pdf, png)
+            Base.Filesystem.rename(joinpath(staging, file), joinpath(dir, file))
+        end
+    end
+    return joinpath(dir, pdf)
+end

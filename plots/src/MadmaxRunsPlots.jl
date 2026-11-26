@@ -9,17 +9,32 @@ include("figures_model.jl")
 include("figures_tests.jl")
 include("figures_chain.jl")
 
-export make_all, paper_theme
+export make_all, paper_theme, PAPER_PLOT_STUDIES
 
-function make_all(resultdir::AbstractString, figdir::AbstractString)
+const PAPER_PLOT_STUDIES = ("filter", "background", "spectra", "sigmafit", "iteration", "nobkg",
+                            "tauscan", "tau0", "correlation", "fptp", "pvalues", "examples",
+                            "leakage", "tolerance", "boundary", "tcut")
+
+function make_all(resultdir::AbstractString, figdir::AbstractString; require_all::Bool = false)
+    mkpath(figdir)
+    missing = [name for name in PAPER_PLOT_STUDIES if !isfile(joinpath(resultdir, name * ".jls"))]
+    if !isempty(missing)
+        message = "Missing study results in $resultdir: " * join(missing, ", ")
+        require_all && throw(ArgumentError(message))
+        log_message(message)
+    end
+    require_all && serif_fonts() === nothing &&
+        error("Paper export requires the DejaVu Serif font family")
     set_theme!(paper_theme())
     made = String[]
     load(name) = (p = joinpath(resultdir, name * ".jls"); isfile(p) ? load_result(p) : nothing)
     function make(f, name, args...)
         try
-            push!(made, savefig(f(args...), figdir, name)); println("figure $name")
-        catch e
-            println("figure $name failed: ", sprint(showerror, e))
+            push!(made, savefig(f(args...), figdir, name))
+            log_message("Wrote $name (PDF and PNG)")
+        catch err
+            log_message("Figure $name failed: $(sprint(showerror, err))")
+            rethrow()
         end
     end
     tau0 = load("tau0")

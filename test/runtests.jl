@@ -10,5 +10,6 @@ const FULL = get(ENV, "MADMAX_TEST_FULL", "0") == "1"
     include("test_boundary.jl")
     include("test_stats.jl")
     include("test_chain.jl")
+    include("test_checkpoints.jl")
     include("test_studies.jl")
 end

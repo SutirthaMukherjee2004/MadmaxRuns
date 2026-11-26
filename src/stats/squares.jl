@@ -14,19 +14,46 @@ function squares_T_run(z::AbstractVector)
     return T, best[1], best[2]
 end
 
-function pbc_cdf(t::Real, L::Integer; nblock::Integer = 100, epsp::Real = 1e-7)
-    t <= 0 && return 0.0
-    L <= 2nblock && return Float64(RunStatistics.squares_cdf(Float64(t), L))
-    for e in (epsp, 1e-10, 1e-15)
-        try
-            return 1 - Float64(RunStatistics.squares_pvalue_approx(Float64(t), Float64[nblock, L / nblock], e))
-        catch err
-            (err isa AssertionError || err isa DomainError) || rethrow()
+function pbc_block_logcdfs(t::Real, L::Integer)
+    weights = [exp2(-k) for k in 0:L]
+    powers = [gamma_inc(k / 2, t / 2) for k in 1:L]
+    cdf_positive = zeros(L + 1)
+    survival = zeros(L + 1)
+    logs = zeros(L)
+    for n in 1:L
+        lo, hi = powers[n]
+        lower = 0.5 * cdf_positive[n] + weights[n+1] * lo
+        upper = 0.5 * survival[n] + weights[n+1] * hi
+        @inbounds for k in 1:n-1
+            lo, hi = powers[k]
+            w = weights[k+2]
+            lower += w * lo * (cdf_positive[n-k] + weights[n-k])
+            upper += w * (hi + lo * survival[n-k])
         end
+        cdf_positive[n+1] = lower
+        survival[n+1] = upper
+        normalizer = 1 - weights[n+1]
+        logs[n] = lower <= 0.5 * normalizer ? log(lower / normalizer) : log1p(-upper / normalizer)
     end
-    return 1 - 1e-15
+    return logs
 end
-pbc_pvalue(t::Real, L::Integer; kw...) = 1 - pbc_cdf(t, L; kw...)
+
+function pbc_logcdf(t::Real, L::Integer; nblock::Integer = 100, epsp::Real = 1e-7)
+    L > 0 || throw(ArgumentError("spectrum length must be positive"))
+    nblock > 0 || throw(ArgumentError("block length must be positive"))
+    isfinite(t) || throw(DomainError(t, "SQUARES statistic must be finite"))
+    t <= 0 && return -Inf
+    L <= 2nblock && return pbc_block_logcdfs(t, L)[end]
+    return pbc_logcdf_blocks(t, L, nblock)
+end
+pbc_cdf(t::Real, L::Integer; kw...) = exp(pbc_logcdf(t, L; kw...))
+
+function checked_pvalue(p::Real, t::Real)
+    0 < p <= 1 || throw(DomainError(p, "invalid or unrepresentable p-value at T=$t"))
+    return p
+end
+
+pbc_pvalue(t::Real, L::Integer; kw...) = checked_pvalue(-expm1(pbc_logcdf(t, L; kw...)), t)
 
 function pbc_cdf_recursion(t::Real, L::Integer; qmax::Integer = 400)
     qm = min(L, qmax)
@@ -46,8 +73,11 @@ function pbc_cdf_recursion(t::Real, L::Integer; qmax::Integer = 400)
     return P
 end
 
-function pbc_cdf_blocks(t::Real, L::Integer; nblock::Integer = 100)
-    F1 = pbc_cdf_recursion(t, nblock); F2 = pbc_cdf_recursion(t, 2nblock)
+function pbc_logcdf_blocks(t::Real, L::Integer, nblock::Integer)
+    blocks = pbc_block_logcdfs(t, 2nblock)
+    F1, F2 = blocks[nblock], blocks[2nblock]
     n = L / nblock
-    return F1^n / (F1^2 / F2)^(n - 1)
+    return F1 == -Inf ? -Inf : F1 + (n - 1) * (F2 - F1)
 end
+
+pbc_cdf_blocks(t::Real, L::Integer; nblock::Integer = 100) = t <= 0 ? 0.0 : exp(pbc_logcdf_blocks(t, L, nblock))

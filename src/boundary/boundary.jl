@@ -50,7 +50,8 @@ function boundary_patterns(H::AbstractMatrix, sigmaJ::AbstractVector, sigmatest:
         V[:, k] ./= s[k]
     end
     tot = sum(abs2, s)
-    unc = [max(0.0, 1 - sum(abs2, s[1:k]) / tot) for k in eachindex(s)]
+    unc = iszero(tot) ? zeros(length(s)) :
+          [max(0.0, 1 - sum(abs2, s[1:k]) / tot) for k in eachindex(s)]
     return BoundaryBasis(s, V, unc)
 end
 

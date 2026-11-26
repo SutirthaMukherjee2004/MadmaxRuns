@@ -1,14 +1,16 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 cd "$(dirname "$0")/.."
-T=${1:-auto}; OUT=${MADMAX_OUT:-results}; J=${JULIA:-julia}
+source batch/config.sh
+T=${1:-auto}
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-$J --project=. -t $T scripts/selftest.jl "$OUT/smoke" | tee selftest.log
-grep -q "ALL TESTS PASSED" selftest.log || { echo "self-test failed, stopping"; exit 1; }
+trap 'echo "batch stopped at line $LINENO, status $?" >&2' ERR
+"$JULIA" --project=. -t "$T" scripts/selftest.jl "$MADMAX_OUT/smoke" 2>&1 | tee -a "$MADMAX_LOGS/selftest.log"
 for list in batch/jobs_stage1.txt batch/jobs_stage2.txt; do
     grep -v '^\s*#' "$list" | grep -v '^\s*$' | while read -r line; do
-        $J --project=. -t $T scripts/run_study.jl $line outdir="$OUT"
+        read -r -a args <<< "$line"
+        "$JULIA" --project=. -t "$T" scripts/run_study.jl "${args[@]}" output_root="$MADMAX_OUT" resume=true
     done
 done
-$J --project=. scripts/merge_tables.jl "$OUT"
-$J --project=plots plots/scripts/make_figures.jl "$OUT" "$OUT/figs"
+"$JULIA" --project=. scripts/merge_tables.jl "$MADMAX_DATA" 2>&1 | tee -a "$MADMAX_LOGS/tables.log"
+"$JULIA" --project=plots plots/scripts/make_figures.jl --require-all

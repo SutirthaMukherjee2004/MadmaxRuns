@@ -10,7 +10,8 @@ function study_nobkg(o::StudyOptions)
     Threads.@threads for s in 1:o.nspec
         T0[s] = squares_T(randn(spectrum_rng(o, 1, s), L))
     end
-    p0 = pvalue.(Ref(tab), T0)
+    P(t) = tabulated_pvalue(x -> pbc_pvalue(x, L), tab, t)
+    p0 = P.(T0)
     shapes = Dict{String,Any}()
     for sh in ALL_SHAPES
         prof = line_profile(sh, 20.0, 4.0, L, cen)
@@ -18,7 +19,7 @@ function study_nobkg(o::StudyOptions)
         Threads.@threads for s in 1:o.nspec
             T[s] = squares_T(randn(spectrum_rng(o, 1, s), L) .+ prof)
         end
-        p = pvalue.(Ref(tab), T)
+        p = P.(T)
         shapes[shape_name(sh)] = (; p, f05 = fraction_below(p, 0.05), profile = prof[Int(cen)-30:Int(cen)+30])
         log_message(@sprintf("nobkg: %-10s A = 20, w = 4: f(p<=0.05) = %.3f", shape_name(sh), fraction_below(p, 0.05)))
     end

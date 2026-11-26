@@ -2,7 +2,11 @@ function parse_value(T::Type, s::AbstractString)
     T <: AbstractVector{NoiseModel} && return [parse_noise_model(strip(v)) for v in split(s, ',')]
     T <: AbstractVector{<:AbstractString} && return [String(strip(v)) for v in split(s, ',')]
     T <: AbstractVector && return [parse(eltype(T), strip(v)) for v in split(s, ',')]
-    T === Bool && return lowercase(s) in ("1", "true", "yes")
+    if T === Bool
+        lowercase(s) in ("1", "true", "yes") && return true
+        lowercase(s) in ("0", "false", "no") && return false
+        throw(ArgumentError("invalid boolean '$s'"))
+    end
     T === Symbol && return Symbol(s)
     T <: AbstractString && return String(s)
     return parse(T, s)
@@ -20,6 +24,9 @@ end
 function parse_cli(args::AbstractVector{<:AbstractString})
     kw = Dict{Symbol,Any}()
     types = Dict(zip(fieldnames(StudyOptions), fieldtypes(StudyOptions)))
+    types[:resume] = Bool
+    types[:output_root] = String
+    types[:log] = String
     for a in args
         occursin('=', a) || throw(ArgumentError("argument '$a' is not of the form key=value"))
         k, v = split(a, '='; limit = 2); key = Symbol(strip(k))

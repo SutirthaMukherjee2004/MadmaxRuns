@@ -1,176 +1,185 @@
 # MadmaxRuns
 
-Julia implementation of the analysis chain of *Signal-agnostic search for narrow lines on
-unknown backgrounds* (SQUARES test statistic with Fourier whitening). It also contains the
-studies that reproduce every figure and table of the paper, a CairoMakie plotting package and
-PBS batch scripts.
+MadmaxRuns implements the SQUARES analysis from *Signal-agnostic search for narrow lines on unknown backgrounds*. It tests a measured or simulated power spectrum for a narrow excess after estimating the background and noise, whitening the residual, and removing boundary patterns.
 
-## File tree
+## Features
 
-```
-MadmaxRuns/
-├── Project.toml
-├── README.md
-├── src/
-│   ├── MadmaxRuns.jl            module, includes and exports
-│   ├── model/
-│   │   ├── grid.jl              frequency grid (25 000 bins of 2 kHz from 4.218 MHz)
-│   │   ├── background.jl        background b(f), Eq. (bkg), r_k ~ N(0,1)
-│   │   ├── noise.jl             σ_i = σ_0 + σ_1 b_i, homo-/heteroscedastic, Eq. (C1)
-│   │   └── lineshapes.jl        Gaussian, Lorentzian, top-hat, axion (SHM) lines, Eq. (sig)
-│   ├── filter/
-│   │   ├── savitzky_golay.jl    SG / SGW kernels, residual kernel g, G(f), r = G_lin x
-│   │   └── weighted_sg.jl       SG weighted by w_i = 1/σ̂_i² (FFT correlations + per-bin solve)
-│   ├── noise/estimate.jl        windowed fit (Eq. s7), LSQ fit (Eq. s6), iterative estimate
-│   ├── whitening/fourier.jl     mode set M, κ, division by G(f) on M
-│   ├── boundary/
-│   │   ├── boundary.jl          spike responses, M̃, SVD, removal z' = z − Σ (v_kᵀz) v_k
-│   │   └── tau0.jl              τ0 exact (Eqs. f5–f7) and closed form (Eq. f10)
-│   ├── stats/
-│   │   ├── special.jl           Ψ_q, Ψ̄_q, Φ, Φ⁻¹, tilted χ² tail moments
-│   │   ├── bivariate_normal.jl  Φ₂ (Gauss–Legendre)
-│   │   ├── squares.jl           T from RunStatistics.jl, P_BC (RunStatistics.jl)
-│   │   ├── pk.jl                P_K, Eq. (g5): E_q first order and second order (Eq. g7), tables
-│   │   └── pk_exact.jl          exact E_q, Eq. (g6), by Monte Carlo
-│   ├── pipeline/
-│   │   ├── config.jl            PipelineConfig (n, m, kind, τ, W, estimator, tol, K, P_K order, …)
-│   │   ├── setup.jl             FilterSetup: everything that depends only on filter and τ
-│   │   └── chain.jl             run_chain (steps 2–10), simulate_spectrum (step 1)
-│   ├── nulls/nulls.jl           H0^iid and H0^filt Monte-Carlo nulls, MC p values
-│   ├── io/                      logging, results (.jls/.csv), thread settings, command line
-│   └── studies/                 one file per figure/table group, registry.jl lists them
-├── scripts/
-│   ├── setup.jl                 installs FFTW, SpecialFunctions, RunStatistics (and CairoMakie)
-│   ├── run_pipeline.jl          the chain for one SG filter (n, m) on one spectrum
-│   ├── run_study.jl             one study (or all) from the command line
-│   ├── selftest.jl              stepwise tests + quick run of every study
-│   ├── merge_tables.jl          merges the table sub-jobs, writes table_shapes4.tex
-│   └── latex_table.jl
-├── batch/
-│   ├── config.sh                paths, queue, cores, memory, walltime
-│   ├── jobs_stage1.txt          thresholds τ_min, τ0 and independent studies
-│   ├── jobs_stage2.txt          studies that use τ_min, τ0; table split by shape and width
-│   ├── pbs_array.sh             one PBS sub-job = one line of a job list
-│   ├── pbs_single.sh, pbs_finish.sh
-│   ├── pbs_all.sh               submits everything with dependencies
-│   └── run_local.sh             the same on one machine without a scheduler
-├── plots/
-│   ├── Project.toml             MadmaxRunsPlots (CairoMakie)
-│   ├── src/                     theme and one function per paper figure
-│   └── scripts/make_figures.jl
-└── test/                        stepwise tests of every step (runtests.jl)
-```
+- Analyze one measured CSV or simulate MADMAX-like spectra with homoscedastic or heteroscedastic noise and optional line injections.
+- Use Savitzky–Golay or weighted Savitzky–Golay filtering, iterative noise fitting, Fourier-mode selection, and SVD boundary projection.
+- Report the strongest SQUARES run, the corrected $P_K$ p-value, and a raw-residual $P_{BC}$ comparison. Optionally evaluate two Monte Carlo nulls with the same retained Fourier modes.
+- Follow live progress, inspect saved intermediate arrays, and resume from validated checkpoints.
+- Run ensembles for false-positive rates, detection rates, threshold scans, calibration histograms, and paper tables. Render the study data as PDF and PNG with the shared paper theme.
 
-## Flowchart → code
+## Setup
 
-| Step | What | Code |
-|---|---|---|
-| 1 | x = b + n (+ s) | `simulate_spectrum` (pipeline/chain.jl), `background`, `noise_sigma`, `line_profile` |
-| 2 | smoother b̂ = S x, residual r = G_lin x on N = 24 872 bins | `SGFilter`, `smooth_unweighted`, `linear_residual` |
-| 3 | iterative noise estimate: k = 0 unweighted; then S^(k+1) weighted by 1/σ̂_i^(k)², weighted windowed fit (W = 96, quadratic per window, straight line σ̂_w vs ⟨b⟩_w) or Eq. (s6); repeat until σ̂_0, σ̂_1 no longer change (tol 1e-10) | `estimate_noise`, `weighted_smooth`, `window_fit`, `lsq_noise_fit` |
-| 4 | D = diag(1/σ̂_i), ρ = D r | `run_chain` |
-| 5 | F r | `rfft` in `run_chain` |
-| 6 | M = {f : \|G\|² ≥ τ max\|G\|²}, G(0) = 0 removed, Nyquist dropped | `retained_modes`, `retained_fraction` (κ counts ν_f) |
-| 7 | divide by G(f) on M, zero elsewhere | `whitened_fourier` |
-| 8 | c = D F† P_M[F r/G], z = c/√κ on the tested bins m+1…N−m (N_g = 24 744); boundary term removed with the six leading patterns of M̃ | `run_chain`, `boundary_patterns`, `remove_boundary` |
-| 9 | T | `squares_T` → `RunStatistics.t_obs` |
-| 10 | p from P_K = P_BC(T < t \| N_g) exp[−N_g Σ_q 2^{−(q+2)} Ψ̄_q (E_q − 1)], second order by default; Monte-Carlo p under H0^iid and H0^filt | `pk_cdf`, `pk_table`, `pvalue`, `null_iid`, `null_filt`, `mc_pvalue` |
+Use Julia 1.12 for the pinned environments. Julia's `Project.toml` and `Manifest.toml` files declare and lock the dependencies for analysis, plotting, and the optional Jupyter kernel.
 
-P_BC comes from RunStatistics.jl: `squares_cdf(T, L)` for L ≤ 200 and otherwise
-`squares_pvalue_approx(T, [N, L/N], ε)` with N = 100 (F(T|L) = F(T|N)^n/[1+Δ]^{n−1}). Only where
-RunStatistics refuses an argument (p below its precision ε) is the same block expression
-evaluated with the internal renewal recursion (`pbc_cdf_blocks`). T is always
-`RunStatistics.t_obs(z, 0, 1)[1]`. If your RunStatistics version has a different call
-signature, only `src/stats/squares.jl` has to be adapted.
-
-## Installation
-
-```
-cd MadmaxRuns
-julia scripts/setup.jl plots        # analysis package and plotting environment
+```bash
+julia scripts/setup.jl            # analysis
+julia scripts/setup.jl plots      # analysis and PDF/PNG export
+julia scripts/setup.jl notebooks  # both environments and the MadmaxRuns Julia kernel
 julia --project=. -t 4 test/runtests.jl
 ```
 
-## One spectrum, one SG filter
+The notebook option registers **MadmaxRuns (Julia)** with IJulia. Use a Jupyter installation to open the notebooks. For full paper exports, install the DejaVu Serif font family.
 
-```
-julia --project=. -t 32 scripts/run_pipeline.jl n=4 m=64 tau=1e-7 model=hetero level=0.05 signal=3 nnull=5000 nfilt=1000
-julia --project=. -t 32 scripts/run_pipeline.jl n=4 m=64 input=myspectrum.csv out=result.jls
-```
+Use `julia --project=. -t 4 scripts/selftest.jl` to run the tests and a small set of study smoke checks.
 
-It prints every step: σ̂_0, σ̂_1 and their full iteration history, removed modes and κ, the
-boundary singular values, T and its run, p from P_K, the raw residual against P_BC and the
-Monte-Carlo p values. `input` is a CSV with one column x or two columns (f, x).
+## Quick start
 
-From Julia:
+Run from the repository root.
 
-```julia
-using MadmaxRuns
-cfg = PipelineConfig(n = 4, m = 64, tau = 1e-7, boundary_removal = true)
-S = filter_setup(cfg)                       # filter, G(f), M, κ, boundary responses, P_K table
-x, b, σ, s = simulate_spectrum(Xoshiro(1), cfg; model = Heteroscedastic, level = 0.05)
-r = run_chain(S, x)                         # r.noise, r.c, r.z, r.zp, r.T, r.p_pk, …
+```bash
+julia --project=. -t 4 scripts/run_pipeline.jl model=hetero level=0.05 signal=3
+julia --project=. -t 4 scripts/run_pipeline.jl input=myspectrum.csv
 ```
 
-## Studies and figures
+For measured data, use a headerless numeric CSV with one row per bin. Frequencies must be strictly increasing, uniformly spaced, and expressed in Hz. Use consistent linear units for power. These are example first rows of a longer spectrum.
 
-| Study | Paper output |
+```csv
+4218000,68.12
+4220000,67.94
+4222000,68.31
+```
+
+A power-only CSV requires exactly 25,000 bins starting at 4.218 MHz with 2 kHz spacing. With default `n=4`, `m=64`, and `W=96`, the two-column format needs more than 256 bins and at least two full noise-fit windows.
+
+One spectrum gives one observed SQUARES statistic and one corrected p-value at a fixed `tau` (default `1e-7`). The log also shows noise-fit convergence, removed modes, boundary singular values, and the strongest run. Set `nnull` and `nfilt` for optional Monte Carlo comparisons. Check p-value flatness across an ensemble of background-only spectra. Calibrate on representative instrument data before interpreting measured candidates.
+
+## Analysis flow
+
+```mermaid
+flowchart TD
+    A["1. Measured CSV or simulated power spectrum"] --> B["2. SG background and residual r"]
+    B --> C["3. Fit the noise profile"]
+    C -->|"Update weights until convergence"| B
+    C -->|"Validated fit"| D["4–5. Normalize for diagnostics and transform r"]
+    D --> E["6–7. Select modes at tau and divide by G on those modes"]
+    E --> F["8. Inverse FFT, scale by fitted noise and retained fraction"]
+    F --> G["8. Project out the leading boundary patterns"]
+    G --> H["9. Compute SQUARES T on the tested bins"]
+    H --> I["10. Evaluate the analytical P_K p-value"]
+    H --> J["Optional: compare T with simulated null statistics"]
+    J --> K["Ensemble studies: calibration, detection rates and tau scans"]
+    C -.-> L["Live log and validated stage checkpoints"]
+    I -.-> L
+    K -.-> M["Study data and paper figures"]
+```
+
+The FFT uses the unweighted residual and transfer function. The fitted noise is applied after the inverse FFT. The filtered null uses the measured spectrum's fitted noise profile and follows the same filtering, Fourier mask, and boundary treatment. The i.i.d. null removes the same modes from unit Gaussian noise.
+
+## Run outputs and recovery
+
+The command-line workflows and paper notebook create these folders at startup.
+
+```text
+results/
+├── logs/
+├── data/
+│   └── checkpoints/
+└── paperplots/
+```
+
+| Folder | What to expect |
 |---|---|
-| `filter` | Fig. filter (fig_filter) |
-| `background`, `spectra` | Figs. bkg, spectra |
-| `sigmafit`, `iteration` | Figs. sigmafit (deck_nobkg), iter |
-| `nobkg` | Figs. nobkg, shapes_p |
-| `tauscan` | Fig. tauscan, τ_min |
-| `tau0` | Figs. tau_safe_map, tau_safe_crossing, τ0 |
-| `correlation` | Figs. corr, corrdiff (Δ_rms, mean over lags 1–10) |
-| `fptp` | Fig. three |
-| `pvalues` | Fig. pvals (four panels) |
-| `examples` | Fig. examples |
-| `leakage` | Fig. leakmap |
-| `tolerance` | Fig. tol |
-| `boundary` | Fig. bdshapes, singular values, K = 2 vs 6 check |
-| `tcut` | Figs. tcut, g2nd (exact / second-order / first-order E_q against 5·10⁵ replicas) |
-| `table_a`, `table_b` | Table shapes4 (formula with MC in brackets) |
+| `logs/` | Append-only progress and error messages. Use `tail -f results/logs/pipeline.log` during a single-spectrum run. |
+| `data/` | Final mock or measured results, study `.jls` files, table CSV and LaTeX exports, and compressed stage checkpoints. |
+| `paperplots/` | PDF and PNG pairs once the figure exporter runs. |
 
-```
-julia --project=. -t 32 scripts/run_study.jl tauscan outdir=results
-julia --project=. -t 32 scripts/run_study.jl table_b shapes=axion widths=4 outdir=results
-julia --project=. -t 4  scripts/run_study.jl all quick=true outdir=smoke
-julia --project=plots plots/scripts/make_figures.jl results results/figs
+Use `output_root=...` for the pipeline or study CLI, or set `MADMAX_OUT` for command-line and batch workflows. Pipeline options `out=`, `checkpoint_dir=`, and `log=` can override individual paths. An empty `out=` skips the final result file. Study `outdir=` can point at an existing data directory.
+
+Rerun the same pipeline command to resume. Invalid input or a failed noise fit stops scoring. The log identifies the failure and saved diagnostics. A damaged checkpoint causes its stage and successors to be recomputed. Changed inputs, options, or code start a separate checkpoint history. Use `resume=false` to recompute. Inspect trusted local checkpoints with `MadmaxRuns.load_checkpoint_file(path).data`.
+
+Load a final result with `MadmaxRuns.load_result(path)`. Its `result` field includes the fitted noise, residual, whitened and projected spectra, SQUARES statistic, run bounds, and analytical p-values.
+
+## Paper figures and studies
+
+Open [paperplot.ipynb](paperplot.ipynb) to render existing study data or set `generate_studies = true` to compute them. The notebook and CLI both call `MadmaxRunsPlots.make_all` and share the repository's figure functions, panel sizes, colors, fonts, and export settings.
+
+```bash
+julia --project=. -t 4 scripts/run_study.jl filter resume=true
+julia --project=plots plots/scripts/make_figures.jl
+julia --project=plots plots/scripts/make_figures.jl --require-all
 ```
 
-Options (`key=value`): `n m kind nspec nnull nfilt seed outdir levels models tau W filt_reestimate
-taus tau_min tau0_homo tau0_hetero shapes widths amplitudes level quick`. Study-specific keywords
-are passed through (e.g. `nmc=` and `Mexact=` for `tcut`, `ms=8:8:296` for `leakage`).
-Defaults reproduce the paper: SG n = 4, m = 64, 5000 spectra and replicas, levels 0.12, 1, 5,
-17.3 %, the 63-point τ grid, A = 0:4:28 and w = 2:2:12.
+The second command previews available results. The third checks that every figure study is present before exporting. For a different data or plot directory, pass them as the first and second positional arguments. Full paper-scale studies are more expensive than a preview and use the same renderer. The original [Madmax_Runs-3.ipynb](Madmax_Runs-3.ipynb) is included for the earlier SQUARES workflow. Select the MadmaxRuns kernel manually when opening it.
 
-τ_min and τ0 are read by later studies from `results/tauscan.jls` and `results/tau0.jls`
-(else the paper values 5.4e-5, 2.9e-4, 3.9e-4, or the values given on the command line).
+| Studies | Outputs |
+|---|---|
+| `filter`, `background`, `spectra`, `sigmafit`, `iteration` | Filter response, input spectra, noise fits, convergence |
+| `nobkg`, `examples`, `leakage`, `tolerance`, `boundary` | Example detections, line-shape tests, leakage and boundary diagnostics |
+| `tauscan`, `tau0`, `correlation`, `fptp`, `pvalues`, `tcut` | Threshold scans, null comparisons, p-value calibration and run corrections |
+| `table_a`, `table_b` | Detection fractions and Monte Carlo comparisons |
 
-## PBS
+Use `julia --project=. scripts/run_study.jl list` for the study names. Use `quick=true` for smaller ensembles and `resume=true` to reuse compatible, verified outputs. The histogram study checkpoints each noise model, level, and threshold. It can stop if $P_K$ is invalid at a scan point, preserving the computed statistics. Use `taus=...` in the CLI or `study_overrides` in the notebook for a different scan. A quick run and a full study use different settings.
 
-Edit `batch/config.sh` (paths, queue, `ncpus`, memory, walltime), then on the login node
+For staged runs, use `bash batch/run_local.sh 4` or configure the queue and resources in `batch/config.sh` and submit with `bash batch/pbs_all.sh`. PBS output goes to `results/logs/pbs`. The final stage merges table parts and requests a complete figure export.
 
+## File tree
+
+```text
+MadmaxRuns/
+├── Project.toml
+├── Manifest.toml
+├── README.md
+├── Madmax_Runs-3.ipynb
+├── paperplot.ipynb
+├── notebooks/
+│   ├── Project.toml
+│   └── Manifest.toml
+├── src/
+│   ├── MadmaxRuns.jl
+│   ├── model/
+│   │   ├── grid.jl
+│   │   ├── background.jl
+│   │   ├── noise.jl
+│   │   └── lineshapes.jl
+│   ├── filter/
+│   │   ├── savitzky_golay.jl
+│   │   └── weighted_sg.jl
+│   ├── noise/
+│   │   └── estimate.jl
+│   ├── whitening/
+│   │   └── fourier.jl
+│   ├── boundary/
+│   │   ├── boundary.jl
+│   │   └── tau0.jl
+│   ├── stats/
+│   │   ├── special.jl
+│   │   ├── bivariate_normal.jl
+│   │   ├── squares.jl
+│   │   ├── pk.jl
+│   │   └── pk_exact.jl
+│   ├── pipeline/
+│   │   ├── config.jl
+│   │   ├── setup.jl
+│   │   └── chain.jl
+│   ├── nulls/
+│   │   └── nulls.jl
+│   ├── io/
+│   └── studies/
+├── scripts/
+│   ├── setup.jl
+│   ├── run_pipeline.jl
+│   ├── run_study.jl
+│   ├── selftest.jl
+│   ├── merge_tables.jl
+│   └── latex_table.jl
+├── batch/
+│   ├── config.sh
+│   ├── jobs_stage1.txt
+│   ├── jobs_stage2.txt
+│   ├── pbs_array.sh
+│   ├── pbs_single.sh
+│   ├── pbs_finish.sh
+│   ├── pbs_all.sh
+│   └── run_local.sh
+├── plots/
+│   ├── Project.toml
+│   ├── Manifest.toml
+│   ├── src/
+│   └── scripts/
+│       └── make_figures.jl
+└── test/
+    └── runtests.jl
 ```
-bash batch/pbs_all.sh
-```
-
-This submits the self-test, stage 1 (12 sub-jobs), stage 2 (32 sub-jobs, the table split by
-shape and width) and the final merge and figures, each depending on the previous one. Every
-sub-job runs `julia -t $NCPUS` over spectra, with FFTW, BLAS and OpenMP at one thread
-(`configure_threads`, `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1`), so the cores are not
-oversubscribed. Random streams are indexed by (seed, case, spectrum), so results do not depend
-on the number of threads or on how the work is split.
-
-## Choices made in the code
-
-- The Nyquist mode is removed together with the modes below τ (`drop_nyquist = true`), which
-  gives the 97 removed modes and κ = 99.2 % of the paper at τ = 1e-7.
-- H0^filt replicas go through the full chain including the iterative noise estimate
-  (`filt_reestimate = true`); `false` uses the σ̂ of the data in step 4.
-- Noise-only spectra (b = 0) keep σ_i of a background realisation.
-- The raw residual is r/(σ̂√q) on the tested bins, tested with P_BC.
-- β_max and N_g in τ0 run over the tested bins.
-- In threshold scans the noise fit of a spectrum (steps 2–3, independent of τ) is done once
-  and kept in full precision; steps 4–10 are repeated at every τ (`SpectrumSet`, `eval_set`).

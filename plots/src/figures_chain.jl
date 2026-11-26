@@ -3,8 +3,9 @@ function fig_examples(r)
     tags = [t for t in ("homo", "hetero") if haskey(r.cases, t)]
     for (j, tag) in enumerate(tags)
         d = r.cases[tag]; nfull = length(d.x); m = div(nfull - length(d.r), 2)
-        f = PAPER_FREQS(nfull) ./ 1e6; fin = f[m+1:end-m]
-        a = Axis(fig[1, j], xlabel = L"f\ \mathrm{(MHz)}", ylabel = j == 1 ? L"x" : "", title = tag == "homo" ? "homoscedastic" : "heteroscedastic")
+        f = MadmaxRuns.PAPER_GRID.df_hz .* (0:nfull-1) ./ 1e6; fin = f[m+1:end-m]
+        offset_label = L"f-f_{\mathrm{ref}}\ \mathrm{(MHz)}"
+        a = Axis(fig[1, j], xlabel = offset_label, ylabel = j == 1 ? L"x" : "", title = tag == "homo" ? "homoscedastic" : "heteroscedastic")
         lines!(a, f, d.x; color = MIDGREY, linewidth = 0.4)
         lines!(a, fin, d.bhat; color = BLUE, linewidth = 1.0)
         c = argmax(d.line)
@@ -15,17 +16,17 @@ function fig_examples(r)
         lines!(ia, f[w], d.b[w] .+ d.line[w]; color = RED)
         b = Axis(fig[2, j], xscale = log10, yscale = log10, xlabel = L"f\ \mathrm{(cycles/bin)}", ylabel = j == 1 ? "power" : "")
         k = 2:length(d.f)
-        lines!(b, d.f[k], pos(d.Px[k]); color = LIGHTGREY, linewidth = 0.4, label = L"|\tilde x(f)|^2")
-        lines!(b, d.f[k], pos(d.Pr[k]); color = BLUE, linewidth = 0.4, label = L"|\tilde r(f)|^2")
-        lines!(b, d.f[k], pos(d.Pmodel[k]); color = :black, linestyle = :dash, label = L"\widehat\sigma^2|G(f)|^2")
-        hlines!(b, [mean(abs2, d.sigma_hat)]; color = RED, linestyle = :dot, label = L"\widehat\sigma^2")
+        lines!(b, d.f[k], pos(d.Px[k]); color = LIGHTGREY, linewidth = 0.4, label = L"|\tilde{x}(f)|^2")
+        lines!(b, d.f[k], pos(d.Pr[k]); color = BLUE, linewidth = 0.4, label = L"|\tilde{r}(f)|^2")
+        lines!(b, d.f[k], pos(d.Pmodel[k]); color = :black, linestyle = :dash, label = L"\hat{\sigma}^2|G(f)|^2")
+        hlines!(b, [mean(abs2, d.sigma_hat)]; color = RED, linestyle = :dot, label = L"\hat{\sigma}^2")
         j == 1 && axislegend(b; position = :rb, labelsize = 7)
-        cc = Axis(fig[3, j], xlabel = L"f\ \mathrm{(MHz)}", ylabel = j == 1 ? L"r_i,\ \bar\sigma r_i/\widehat\sigma_i" : "")
+        cc = Axis(fig[3, j], xlabel = offset_label, ylabel = j == 1 ? L"r_i,\ \bar\sigma r_i/\hat{\sigma}_i" : "")
         lines!(cc, fin, d.r; color = MIDGREY, linewidth = 0.3)
         lines!(cc, fin, d.pre; color = (BLUE, 0.6), linewidth = 0.3)
         text!(cc, 0.97, 0.05; space = :relative, align = (:right, :bottom), fontsize = 7,
               text = @sprintf("kurtosis %.2f \u2192 %.2f", d.kurt_r, d.kurt_pre))
-        e = Axis(fig[4, j], xlabel = L"\langle b\rangle_w", ylabel = j == 1 ? L"\widehat\sigma_w" : "")
+        e = Axis(fig[4, j], xlabel = L"\langle b\rangle_w", ylabel = j == 1 ? L"\hat{\sigma}_w" : "")
         scatter!(e, d.bw, d.sw; color = (ORANGE, 0.6), markersize = 2.5)
         bb = range(extrema(d.bw)..., length = 40)
         lines!(e, bb, d.fit[1] .+ d.fit[2] .* bb; color = RED)
@@ -48,7 +49,6 @@ function fig_examples(r)
     rowgap!(fig.layout, 4)
     return fig
 end
-PAPER_FREQS(n) = MadmaxRuns.PAPER_GRID.fref_hz .+ MadmaxRuns.PAPER_GRID.df_hz .* (0:n-1)
 
 function fig_leakage(r)
     fig = Figure(size = (340, 170))
@@ -178,7 +178,7 @@ function fig_g2nd(r)
     fig = Figure(size = (300, 420))
     for (i, nt) in enumerate(r.ntau)
         d = r.cases[nt]
-        ax = Axis(fig[i, 1], xlabel = i == length(r.ntau) ? L"t" : "", ylabel = L"P(T\geq t)/P_{\rm MC}", title = L"n_\tau=%$nt")
+        ax = Axis(fig[i, 1], xlabel = i == length(r.ntau) ? L"t" : "", ylabel = L"P(T\geq t)/P_{\mathrm{MC}}", title = L"n_\tau=%$nt")
         ok = d.S_mc .> 0
         band!(ax, r.tgrid[ok], 1 .- d.band[ok], 1 .+ d.band[ok]; color = (LIGHTGREY, 0.6))
         lines!(ax, r.tgrid[ok], d.ratio_exact[ok]; color = BLUE, label = "exact")

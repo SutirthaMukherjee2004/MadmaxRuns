@@ -22,6 +22,8 @@ function write_latex_table(dir::AbstractString)
     end
     println(io, "\\bottomrule\n\\end{tabular}")
     path = joinpath(dir, "table_shapes4.tex")
-    write(path, take!(io))
+    MadmaxRuns.atomic_write(path) do output
+        write(output, take!(io))
+    end
     println("wrote $path")
 end

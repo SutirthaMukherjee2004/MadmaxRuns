@@ -15,6 +15,40 @@ using MadmaxRuns: parse_cli, paper_tau_grid, autocorrelation, tsum, parabolic_mi
     @test isapprox(parabolic_minimum([0.0, 1.0, 2.0], [1.0, 0.0, 1.0]), 10.0)
 end
 
+@testset "study resume" begin
+    mktempdir() do outdir
+        receipt = joinpath(outdir, ".study", "filter.jls")
+        output = joinpath(outdir, "filter.jls")
+        result = run_study("filter"; outdir, resume = true)
+        original = read(receipt)
+        @test run_study("filter"; outdir, resume = true) == result
+        @test read(receipt) == original
+        @test_throws MethodError run_study("filter"; outdir, resume = true, invalid_option = true)
+        @test read(receipt) == original
+        save_result(output, (; damaged = true))
+        @test run_study("filter"; outdir, resume = true) == result
+        @test load_result(output) == result
+        run_study("filter"; outdir, resume = true, seed = 17)
+        @test read(receipt) != original
+    end
+end
+
+@testset "filtered null uses the supplied noise profile" begin
+    cfg = PipelineConfig(boundary_removal = false)
+    S = filter_setup(cfg; with_pk = false)
+    sigma = collect(range(0.7, 1.4; length=S.N))
+    full = MadmaxRuns.pad_edges(sigma, cfg.m)
+    x = full .* randn(MadmaxRuns.stream_rng(13, 1), S.nfull)
+    expected = MadmaxRuns.tau_step(S, sigma, rfft(linear_residual(S.F, x)); removal = false)
+    @test only(null_filt(S, [sigma], 1).T) == expected.T
+    @test !StudyOptions().filt_reestimate
+    @test_throws ArgumentError null_filt(S, [zeros(S.N)], 1)
+    @test sort(vcat(null_iid(S, 2).T, null_iid(S, 3; first_replica=3).T)) == null_iid(S, 5).T
+    profiles = [sigma, reverse(sigma)]
+    @test sort(vcat(null_filt(S, profiles, 3).T, null_filt(S, profiles, 2; first_replica=4).T)) ==
+          null_filt(S, profiles, 5).T
+end
+
 @testset "studies: \u03c3\u0302 reused across \u03c4 equals the full chain" begin
     o = StudyOptions(nspec = 2)
     cfg = with(base_config(o); boundary_removal = true)

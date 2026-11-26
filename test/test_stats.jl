@@ -3,11 +3,15 @@
     T, i0, i1 = squares_T_run(z)
     @test isapprox(T, squares_T(z))
     @test all(z[i0:i1] .>= 0) && isapprox(sum(abs2, z[i0:i1]), T)
-    for (t, L) in ((10.0, 50), (25.0, 150), (40.0, 200))
-        @test isapprox(pbc_cdf(t, L), pbc_cdf_recursion(t, L); atol = 1e-10)
+    for (t, L) in ((0.1, 1), (3.0, 7), (10.0, 50))
+        @test isapprox(pbc_cdf(t, L), MadmaxRuns.RunStatistics.squares_cdf(t, L); atol = 1e-10)
     end
+    @test isapprox(pbc_cdf(40.0, 200), pbc_cdf_recursion(40.0, 200); atol = 1e-10)
     @test isapprox(pbc_cdf(25.4, 10_000), MadmaxRuns.pbc_cdf_blocks(25.4, 10_000); atol = 1e-10)
-    @test 0.11 < pbc_pvalue(25.4, 10_000) < 0.12
+    @test isapprox(pbc_pvalue(25.4, 10_000), 0.115; atol = 0.0005)
+    @test isapprox(pbc_cdf(25.4, 24_744), pbc_cdf_recursion(25.4, 24_744); atol = 3e-12, rtol = 0)
+    @test 0 < pbc_pvalue(150.0, 24_744) < pbc_pvalue(100.0, 24_744)
+    @test_throws DomainError pbc_pvalue(NaN, 100)
     for (h, k, rho) in ((0.3, -0.2, 0.5), (1.2, 0.7, -0.6), (-0.5, 2.0, 0.9))
         ref = let n = 400_000, rng = Xoshiro(1)
             c = 0
@@ -45,6 +49,17 @@
     end
     M0 = MadmaxRuns.PKModel(24872, 24744, Int[]; qmax = 40)
     @test isapprox(pk_cdf(M0, 25.0), pbc_cdf(25.0, 24744))
+    @test isapprox(pk_pvalue(M0, 150.0), pbc_pvalue(150.0, 24744); rtol = 1e-12)
+    @test_throws DomainError pk_pvalue(M0, 25.0; Eqf = (q, t) -> NaN)
+    @test_throws DomainError pk_pvalue(M0, 25.0; Eqf = (q, t) -> 0.0, P0 = 1.0)
+    tab = MadmaxRuns.survival_table(t -> t < 80.0 ? pbc_pvalue(t, 10_000) : NaN;
+                                    tmax = 80.0, dt = 5.0, allow_invalid = true)
+    @test isapprox(pvalue(tab, 25.0), pbc_pvalue(25.0, 10_000))
+    @test_throws DomainError pvalue(tab, 80.0)
+    finite_tab = PKTable([0.0, 2.0], [0.0, log(0.01)])
+    @test isapprox(pvalue(finite_tab, MadmaxRuns.decision_threshold(finite_tab, 0.05)), 0.05)
+    @test_throws DomainError pvalue(finite_tab, 3.0)
+    @test MadmaxRuns.tabulated_pvalue(_ -> 0.001, finite_tab, 3.0) == 0.001
     K = collect(0:194)
     M1 = MadmaxRuns.PKModel(24872, 24744, K; qmax = 60, order = 1)
     M2m = MadmaxRuns.PKModel(24872, 24744, K; qmax = 60, order = 2)

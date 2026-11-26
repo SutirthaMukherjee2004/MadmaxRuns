@@ -39,25 +39,95 @@ const QUICK_KW = Dict{String,Dict{Symbol,Any}}(
     "tolerance" => Dict(:nnoise => 8),
 )
 
-function run_study(name::AbstractString; kwargs...)
+function study_options(kwargs)
     fields = fieldnames(StudyOptions)
     okw = Dict{Symbol,Any}(k => v for (k, v) in kwargs if k in fields)
     skw = Dict{Symbol,Any}(k => v for (k, v) in kwargs if !(k in fields))
     o = StudyOptions(; okw...)
     o.quick && quick!(o)
+    return o, skw
+end
+
+function study_slot(name::AbstractString, o::StudyOptions)
+    name == "all" && return "all"
+    haskey(STUDIES, name) || throw(ArgumentError("unknown study '$name'; available: " * join(sort(collect(keys(STUDIES))), ", ")))
+    if name in ("table_a", "table_b")
+        foreach(parse_shape, o.shapes)
+        return name * shape_suffix(o)
+    end
+    return name
+end
+
+function study_key(name, o, skw)
+    io = IOBuffer()
+    options = Tuple(getfield(o, field) for field in fieldnames(StudyOptions) if field != :outdir)
+    extra_options = sort!(collect(pairs(skw)); by=first)
+    serialize(io, (1, workflow_fingerprint(), name, options, extra_options))
+    return bytes2hex(SHA.sha256(take!(io)))
+end
+
+study_file_digest(path) = open(io -> bytes2hex(SHA.sha256(io)), path)
+
+function read_study_receipt(receipt, outputs, key)
+    isfile(receipt) && all(isfile, outputs) || return nothing
+    try
+        data = load_result(receipt)
+        data.key == key && data.digests == study_file_digest.(outputs) || return nothing
+        return load_result(first(outputs))
+    catch err
+        err isa InterruptException && rethrow()
+        log_message("checkpoint $receipt could not be read: $(sprint(showerror, err)); recomputing study")
+        return nothing
+    end
+end
+
+function run_study(name::AbstractString; resume::Bool = false, kwargs...)
+    o, skw = study_options(kwargs)
+    slot = study_slot(name, o)
     mkpath(o.outdir)
     if name == "all"
-        return Dict(n => run_study(n; kwargs...) for n in STUDY_ORDER)
+        return Dict(n => run_study(n; resume, kwargs...) for n in STUDY_ORDER)
     end
-    haskey(STUDIES, name) || throw(ArgumentError("unknown study '$name'; available: " * join(sort(collect(keys(STUDIES))), ", ")))
     if o.quick
         for (k, v) in get(QUICK_KW, name, Dict{Symbol,Any}())
             haskey(skw, k) || (skw[k] = v)
         end
     end
-    log_message("study $name: n = $(o.n), m = $(o.m), $(o.kind), nspec = $(o.nspec), nnull = $(o.nnull), nfilt = $(o.nfilt), threads = $(Threads.nthreads())")
-    t = time()
-    res = STUDIES[name](o; skw...)
-    log_message(@sprintf("study %s finished in %.1f s \u2192 %s", name, time() - t, o.outdir))
-    return res
+    checkpoint_dir = joinpath(o.outdir, ".study")
+    mkpath(checkpoint_dir)
+    receipt = joinpath(checkpoint_dir, slot * ".jls")
+    outputs = [result_path(o, slot)]
+    name in ("table_a", "table_b") && push!(outputs, joinpath(o.outdir, slot * ".csv"))
+    try
+        return with_checkpoint_lock(joinpath(checkpoint_dir, slot * ".lock")) do
+            if name in ("correlation", "pvalues")
+                o.tau_min, o.tau0_homo, o.tau0_hetero = thresholds(o)
+            elseif name in ("fptp", "tau0")
+                o.tau_min = minimum_threshold(o)
+            end
+            key = study_key(name, o, skw)
+            if resume
+                result = read_study_receipt(receipt, outputs, key)
+                if result !== nothing
+                    log_message("study $slot resumed from verified result $(first(outputs))")
+                    return result
+                end
+            end
+            log_message("study $slot: n = $(o.n), m = $(o.m), $(o.kind), nspec = $(o.nspec), nnull = $(o.nnull), nfilt = $(o.nfilt), threads = $(Threads.nthreads())")
+            t = time()
+            result = if name == "pvalues"
+                progress = CheckpointRun(joinpath(checkpoint_dir, "pvalues"), (; key); resume)
+                log_message("p-value study checkpoints: $(progress.dir)")
+                study_pvalues(o; skw..., progress)
+            else
+                STUDIES[name](o; skw...)
+            end
+            save_result(receipt, (; key, digests = study_file_digest.(outputs)))
+            log_message(@sprintf("study %s finished in %.1f s \u2192 %s", slot, time() - t, o.outdir))
+            return result
+        end
+    catch err
+        log_message("study $slot stopped: $(sprint(showerror, err, catch_backtrace()))")
+        rethrow()
+    end
 end

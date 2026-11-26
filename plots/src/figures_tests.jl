@@ -5,7 +5,7 @@ function fig_nobkg_data(r)
     i0, i1 = r.run
     w = max(1, i0 - 60):min(r.L, i1 + 60)
     vspan!(a, [i0], [i1]; color = (RED, 0.25))
-    b = Axis(fig[2, 1], xlabel = "bin", ylabel = L"x_i", title = L"T_{\rm obs}=%$(round(r.T_example, digits = 2)),\ p=%$(round(r.p_example, digits = 3))")
+    b = Axis(fig[2, 1], xlabel = "bin", ylabel = L"x_i", title = L"T_{\mathrm{obs}}=%$(round(r.T_example, digits = 2)),\ p=%$(round(r.p_example, digits = 3))")
     scatterlines!(b, collect(w), r.example[w]; color = MIDGREY, markersize = 3, linewidth = 0.6)
     scatterlines!(b, collect(i0:i1), r.example[i0:i1]; color = RED, markersize = 4, linewidth = 0.9)
     hlines!(b, [0]; color = :black, linewidth = 0.6)
@@ -129,10 +129,10 @@ end
 
 function fig_fptp(r)
     fig = Figure(size = (720, 230))
-    titles = [L"\mathcal{H}_0^{\rm iid}", L"\mathcal{H}_0^{\rm filt}", "boundary term removed"]
-    sets = [[("iid_mc", ORANGE, "Monte Carlo"), ("pk", GREEN, L"P_{\mathcal K}"), ("pk_rm", VIOLET, L"P_{\mathcal K}\mathrm{,\ removed}")],
-            [("filt_mc", BLUE, "Monte Carlo"), ("pk", GREEN, L"P_{\mathcal K}"), ("filt_mc_rm", LIGHTVIOLET, "MC, removed")],
-            [("pk_rm", VIOLET, L"\mathcal{H}_0^{\rm iid}\ P_{\mathcal K}"), ("filt_mc_rm", LIGHTVIOLET, L"\mathcal{H}_0^{\rm filt}\ \mathrm{MC}")]]
+    titles = [L"\mathcal{H}_0^{\mathrm{iid}}", L"\mathcal{H}_0^{\mathrm{filt}}", "boundary term removed"]
+    sets = [[("iid_mc", ORANGE, "Monte Carlo"), ("pk", GREEN, L"P_{\mathcal{K}}"), ("pk_rm", VIOLET, L"P_{\mathcal{K}}\mathrm{,\ removed}")],
+            [("filt_mc", BLUE, "Monte Carlo"), ("pk", GREEN, L"P_{\mathcal{K}}"), ("filt_mc_rm", LIGHTVIOLET, "MC, removed")],
+            [("pk_rm", VIOLET, L"\mathcal{H}_0^{\mathrm{iid}}\ P_{\mathcal{K}}"), ("filt_mc_rm", LIGHTVIOLET, L"\mathcal{H}_0^{\mathrm{filt}}\ \mathrm{MC}")]]
     for (j, set) in enumerate(sets)
         ax = Axis(fig[1, j], xscale = log10, xlabel = L"\tau", ylabel = j == 1 ? L"f(p<0.05)" : "", title = titles[j])
         for (key, col, lab) in set, tag in keys(r.cases)

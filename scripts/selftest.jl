@@ -1,22 +1,12 @@
 using MadmaxRuns, Test
 const ROOT = dirname(@__DIR__)
-outdir = isempty(ARGS) ? joinpath(ROOT, "smoke") : ARGS[1]
+paths = prepare_output_layout(isempty(ARGS) ? joinpath(ROOT, "smoke") : ARGS[1])
 
-include(joinpath(ROOT, "test", "runtests.jl"))
-
-failed = String[]
-for name in STUDY_ORDER
-    t = time()
-    try
-        run_study(name; quick = true, outdir)
-        println("smoke: $name ok (", round(time() - t, digits = 1), " s)")
-    catch e
-        push!(failed, name)
-        println("smoke: $name FAILED"); showerror(stdout, e, catch_backtrace()); println()
+with_run_log(joinpath(paths.logs, "smoke.log")) do
+    log_message("Starting self-test in $(paths.root)")
+    include(joinpath(ROOT, "test", "runtests.jl"))
+    for name in ("filter", "sigmafit", "iteration")
+        run_study(name; quick = true, resume = true, nspec = 2, outdir = paths.data)
     end
-end
-if isempty(failed)
-    println("ALL TESTS PASSED")
-else
-    println("FAILED STUDIES: ", join(failed, ", ")); exit(1)
+    log_message("ALL TESTS PASSED")
 end

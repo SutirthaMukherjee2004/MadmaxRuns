@@ -2,6 +2,7 @@ module MadmaxRuns
 
 using LinearAlgebra, Random, Statistics, Printf, Serialization, DelimitedFiles, Dates
 using FFTW
+using SHA, CodecZlib
 using SpecialFunctions: erf, erfc, erfcinv, loggamma, gamma_inc
 import RunStatistics
 
@@ -26,14 +27,16 @@ include("stats/squares.jl")
 include("stats/pk.jl")
 include("stats/pk_exact.jl")
 
+include("io/logging.jl")
+include("io/results.jl")
+include("io/checkpoints.jl")
+
 include("pipeline/config.jl")
 include("pipeline/setup.jl")
 include("pipeline/chain.jl")
 
 include("nulls/nulls.jl")
 
-include("io/logging.jl")
-include("io/results.jl")
 include("io/parallel.jl")
 
 include("studies/common.jl")
@@ -71,6 +74,7 @@ export PipelineConfig, FilterSetup, filter_setup, ChainResult, run_chain, analys
        simulate_spectrum, inject_line!
 export NullSet, null_iid, null_filt, mc_pvalue
 export run_study, STUDIES, STUDY_ORDER, StudyOptions, save_result, load_result, log_message, open_log, close_log,
-       configure_threads, parse_cli, merge_tables, tau_setups, SpectrumSet, fit_set, eval_set
+       configure_threads, parse_cli, merge_tables, tau_setups, SpectrumSet, fit_set, eval_set,
+       prepare_output_layout, with_run_log
 
 end

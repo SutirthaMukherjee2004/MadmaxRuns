@@ -7,6 +7,9 @@ docs/build/
 results/
 smoke/
 *.jls
+*.jls.gz
+.study/
+.ipynb_checkpoints/
 
 .vscode/
 .idea/

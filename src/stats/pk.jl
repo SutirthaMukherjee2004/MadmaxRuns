@@ -63,7 +63,7 @@ function Eq_first(d::EqData, t::Real)
     run = (1 + a)^(-q / 2) * Psibar(q, t * (1 + a)) / Psibar(q, t)
     nb(eta) = 2 * exp(eta^2 / 2) * Phi(eta)
     E = d.detfac * run * nb(etam) * nb(etap)
-    return isfinite(E) ? E : 0.0
+    return E
 end
 
 function Eq_second(d::EqData, t::Real)
@@ -82,7 +82,7 @@ function Eq_second(d::EqData, t::Real)
     s = sqrt.(diag(Pi)); rho = clamp(Pi[1, 2] / (s[1] * s[2]), -1.0, 1.0)
     nb = 4 / sqrt(det(P)) * exp(0.5 * dot(eta, mu)) * Phi2(mu[1] / s[1], mu[2] / s[2], rho)
     E = d.detfac * run * nb
-    return isfinite(E) ? E : 0.0
+    return E
 end
 
 struct PKModel
@@ -104,43 +104,81 @@ function PKModel(N::Integer, Ng::Integer, K::AbstractVector{<:Integer}; qmax::In
     return PKModel(N, Ng, collect(K), kappa, gamma, eq, order)
 end
 
-function pk_cdf(M::PKModel, t::Real; Eqf = nothing, P0 = nothing)
-    t <= 0 && return 0.0
+function pk_logcdf(M::PKModel, t::Real, Eqf, P0, strict::Bool)
+    isfinite(t) || throw(DomainError(t, "SQUARES statistic must be finite"))
+    t <= 0 && return -Inf
     S = 0.0
     for d in M.eq
         pi0 = 0.5^(d.q + 2) * Psibar(d.q, t)
         pi0 < 1e-300 && continue
         E = Eqf !== nothing ? Eqf(d.q, t) : (M.order == 2 ? Eq_second(d, t) : Eq_first(d, t))
+        if !isfinite(E) || E < 0
+            strict && throw(DomainError(E, "invalid P_K run correction for q=$(d.q), T=$t"))
+            return NaN
+        end
         S += pi0 * (E - 1)
     end
-    pb = P0 === nothing ? pbc_cdf(t, M.Ng) : P0
-    return pb * exp(-M.Ng * S)
+    P0 === nothing || 0 <= P0 <= 1 || throw(DomainError(P0, "P_BC must be a probability"))
+    baseline = P0 === nothing ? pbc_logcdf(t, M.Ng) : log(P0)
+    correction = M.Ng * S
+    result = baseline - correction
+    if !isfinite(correction) || !(result <= 0)
+        strict && throw(DomainError(result, "invalid log P_K CDF at T=$t"))
+        return NaN
+    end
+    return result
 end
-pk_pvalue(M::PKModel, t::Real; kw...) = 1 - pk_cdf(M, t; kw...)
+pk_cdf(M::PKModel, t::Real; Eqf = nothing, P0 = nothing) = exp(pk_logcdf(M, t, Eqf, P0, true))
+pk_pvalue(M::PKModel, t::Real; Eqf = nothing, P0 = nothing) =
+    checked_pvalue(-expm1(pk_logcdf(M, t, Eqf, P0, true)), t)
 
 struct PKTable
     t::Vector{Float64}
     logS::Vector{Float64}
 end
-function PKTable(cdf::Function; tmax::Real = 150.0, dt::Real = 0.05)
+function survival_table(survival::Function; tmax::Real = 150.0, dt::Real = 0.05, allow_invalid::Bool = false)
+    isfinite(dt) && isfinite(tmax) && 0 < dt <= tmax ||
+        throw(ArgumentError("p-value table requires finite 0 < dt <= tmax"))
     t = collect(0.0:dt:tmax)
-    S = zeros(length(t))
+    logS = zeros(length(t))
     Threads.@threads for i in eachindex(t)
-        S[i] = 1 - cdf(t[i])
+        p = survival(t[i])
+        logS[i] = allow_invalid && !(0 < p <= 1) ? NaN : log(checked_pvalue(p, t[i]))
     end
-    return PKTable(t, log.(clamp.(S, 1e-300, 1.0)))
+    return PKTable(t, logS)
 end
-pk_table(M::PKModel; kw...) = PKTable(t -> pk_cdf(M, t); kw...)
-pbc_table(L::Integer; kw...) = PKTable(t -> pbc_cdf(t, L); kw...)
+PKTable(cdf::Function; kw...) = survival_table(t -> 1 - cdf(t); kw...)
+pk_table(M::PKModel; kw...) = survival_table(t -> -expm1(pk_logcdf(M, t, nothing, nothing, false)); allow_invalid = true, kw...)
+pbc_table(L::Integer; kw...) = survival_table(t -> pbc_pvalue(t, L); kw...)
 
 function pvalue(tab::PKTable, T::Real)
-    T <= tab.t[1] && return exp(tab.logS[1])
-    if T >= tab.t[end]
-        k = length(tab.t); sl = (tab.logS[k] - tab.logS[k-1]) / (tab.t[k] - tab.t[k-1])
-        return exp(tab.logS[k] + sl * (T - tab.t[k]))
+    isfinite(T) || throw(DomainError(T, "SQUARES statistic must be finite"))
+    T <= tab.t[1] && return checked_pvalue(exp(tab.logS[1]), T)
+    T <= last(tab.t) || throw(DomainError(T, "SQUARES statistic exceeds the lookup table range"))
+    k = searchsortedlast(tab.t, T)
+    T == tab.t[k] && return checked_pvalue(exp(tab.logS[k]), T)
+    a = (T - tab.t[k]) / (tab.t[k+1] - tab.t[k])
+    logS = (1 - a) * tab.logS[k] + a * tab.logS[k+1]
+    return checked_pvalue(exp(logS), T)
+end
+
+function tabulated_pvalue(evaluate, tab::Union{Nothing,PKTable}, T::Real)
+    return tab === nothing || T > last(tab.t) ? evaluate(T) : pvalue(tab, T)
+end
+
+function decision_threshold(tab::PKTable, alpha::Real)
+    0 < alpha < 1 || throw(ArgumentError("significance must be in (0, 1)"))
+    target = log(alpha)
+    for k in eachindex(tab.t)
+        logp = tab.logS[k]
+        isfinite(logp) || error("invalid p-value table before reaching significance $alpha")
+        logp > target && continue
+        k == 1 && return tab.t[k]
+        before = tab.logS[k-1]
+        weight = (target - before) / (logp - before)
+        return tab.t[k-1] + weight * (tab.t[k] - tab.t[k-1])
     end
-    k = searchsortedlast(tab.t, T); a = (T - tab.t[k]) / (tab.t[k+1] - tab.t[k])
-    return exp((1 - a) * tab.logS[k] + a * tab.logS[k+1])
+    error("p-value table does not reach significance $alpha")
 end
 
 function pk_threshold(cdf::Function, alpha::Real; lo::Real = 1.0, hi::Real = 150.0, tol::Real = 1e-7)

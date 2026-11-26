@@ -6,6 +6,8 @@ function study_sigmafit(o::StudyOptions)
         x, b, sigma, _ = simulate_spectrum(spectrum_rng(o, case_id(model, lv), 1), cfg; model, level = lv, bmed)
         fw = estimate_noise(F, wsg, x; W = 96, estimator = :window, tol = cfg.tol, maxit = cfg.maxit)
         fl = estimate_noise(F, wsg, x; W = 96, estimator = :lsq, tol = cfg.tol, maxit = cfg.maxit)
+        validate_noise_fit(fw, length(x) - 2m)
+        validate_noise_fit(fl, length(x) - 2m)
         wt = 1 ./ pad_edges(fw.sigma, m) .^ 2
         _, _, sw96, bw96 = window_fit(x, 96, wt)
         _, _, sw256, bw256 = window_fit(x, 256, wt)
@@ -25,6 +27,11 @@ function study_sigmafit(o::StudyOptions)
     return res
 end
 
+function relative_step_changes(history)
+    return [iszero(previous) ? NaN : abs(current / previous - 1)
+            for (previous, current) in zip(history, Iterators.drop(history, 1))]
+end
+
 function study_iteration(o::StudyOptions; nsteps::Integer = 12)
     cfg = base_config(o); F = SGFilter(o.n, o.m; kind = o.kind)
     wsg = WSGCache(F, cfg.grid.nbins); bmed = median_background()
@@ -36,15 +43,17 @@ function study_iteration(o::StudyOptions; nsteps::Integer = 12)
                                    model = Heteroscedastic, level = lv, bmed)
             nf = estimate_noise(F, wsg, x; W = 96, estimator = est, tol = 0.0, maxit = nsteps)
             k = length(nf.sigma0_hist) - 1
-            d0[s, 1:k] = abs.(diff(nf.sigma0_hist)); d1[s, 1:k] = abs.(diff(nf.sigma1_hist))
-            conv[s] = estimate_noise(F, wsg, x; W = 96, estimator = est, tol = cfg.tol, maxit = cfg.maxit).iterations
+            d0[s, 1:k] = relative_step_changes(nf.sigma0_hist)
+            d1[s, 1:k] = relative_step_changes(nf.sigma1_hist)
+            fit = estimate_noise(F, wsg, x; W = 96, estimator = est, tol = cfg.tol, maxit = cfg.maxit)
+            conv[s] = validate_noise_fit(fit, length(x) - 2F.m).iterations
         end
         med(v) = (u = filter(isfinite, v); isempty(u) ? NaN : median(u))
         out[(est, lv)] = (; dsigma0 = [med(d0[:, k]) for k in 1:nsteps], dsigma1 = [med(d1[:, k]) for k in 1:nsteps],
                           iterations = conv)
         log_message(@sprintf("iteration %s %.2f%%: median iterations to tol = %.1f", est, 100lv, median(conv)))
     end
-    res = (; cases = out, levels = o.levels, nsteps, nspec = ns)
+    res = (; cases = out, levels = o.levels, nsteps, nspec = ns, relative_changes = true)
     save_result(result_path(o, "iteration"), res)
     return res
 end

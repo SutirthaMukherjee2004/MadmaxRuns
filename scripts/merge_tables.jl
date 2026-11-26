@@ -1,5 +1,6 @@
 using MadmaxRuns, Printf
-dir = isempty(ARGS) ? "results" : ARGS[1]
+dirs = prepare_output_layout()
+dir = isempty(ARGS) ? dirs.data : ARGS[1]
 for part in ("a", "b")
     files = filter(f -> startswith(f, "table_$(part)_") && endswith(f, ".jls"), readdir(dir))
     isempty(files) && continue
